@@ -1,29 +1,69 @@
 {
   "expo": {
-    "name": "mobile",
-    "slug": "mobile",
+    "name": "WellBe",
+    "slug": "wellbe-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#1976d2",
+      "dark": {
+        "image": "./assets/splash-dark.png",
+        "backgroundColor": "#0d47a1"
+      }
     },
+    "updates": {
+      "fallbackToCacheTimeout": 0
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
-      "supportsTablet": true
+      "icon": "./assets/icon.png",
+      "usesIcloudStorage": false,
+      "assetBundlePatterns": [
+        "assets/**/*.png",
+        "assets/**/*.png"
+      ],
+      "supportsTablet": true,
+      "bundleIdentifier": "com.yourcompany.wellbe",
+      "buildNumber": "1.0.0",
+      "infoPlist": {
+        "CFBundleDisplayName": "WellBe",
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#1976d2"
       },
+      "package": "com.yourcompany.wellbe",
+      "versionCode": 1,
+      "permissions": [],
       "edgeToEdgeEnabled": true
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#1976d2"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "757a08e2-b303-45ac-a0be-828df9185acd"
+      }
     }
   }
 }
