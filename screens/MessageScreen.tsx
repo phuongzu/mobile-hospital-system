@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import {
   ActivityIndicator,
   Dimensions,
   RefreshControl,
+  Animated,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -85,20 +86,41 @@ const MessageScreen = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string>('');
+  const [pollingAnimation] = useState(new Animated.Value(0));
+  const [lastPollTime, setLastPollTime] = useState<string>('');
+  const [isPollingActive, setIsPollingActive] = useState(true);
+  const [newMessageIndicator, setNewMessageIndicator] = useState(false);
 
   // Load current user ID và conversations khi screen được focus
   useFocusEffect(
     React.useCallback(() => {
       loadCurrentUser();
       loadConversations();
+      startPollingAnimation();
       return () => {
-        // Cleanup polling khi rời khỏi screen
         if (pollingInterval) {
           clearInterval(pollingInterval);
         }
       };
     }, [])
   );
+
+  const startPollingAnimation = () => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pollingAnimation, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pollingAnimation, {
+          toValue: 0,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  };
 
   const loadCurrentUser = async () => {
     try {
@@ -121,7 +143,7 @@ const MessageScreen = () => {
     }
   };
 
-  const loadConversations = async () => {
+  const loadConversations = async (showIndicator: boolean = false) => {
     try {
       setLoading(true);
       const token = await getAuthToken();
@@ -138,10 +160,18 @@ const MessageScreen = () => {
       });
 
       if (response.data.success) {
+        const prevCount = conversations.reduce((sum, conv) => sum + conv.unread_count, 0);
+        const newCount = response.data.data.reduce((sum: number, conv: Conversation) => sum + conv.unread_count, 0);
+        
         setConversations(response.data.data || []);
         
-        // Start polling for new messages
-        startPolling();
+        // Hiển thị indicator nếu có tin nhắn mới
+        if (showIndicator && newCount > prevCount) {
+          setNewMessageIndicator(true);
+          setTimeout(() => setNewMessageIndicator(false), 2000);
+        }
+        
+        setLastPollTime(new Date().toLocaleTimeString());
       } else {
         Alert.alert('Error', 'Failed to load conversations');
       }
@@ -168,7 +198,7 @@ const MessageScreen = () => {
       if (selectedConversation) {
         loadMessages(selectedConversation._id);
       }
-      loadConversations(); // Refresh conversations list
+      loadConversations(true); // Refresh conversations list với indicator
     }, 5000);
 
     setPollingInterval(interval);
@@ -191,7 +221,15 @@ const MessageScreen = () => {
       );
 
       if (response.data.success) {
-        setMessages(response.data.data || []);
+        const previousMessagesCount = messages.length;
+        const newMessages = response.data.data || [];
+        setMessages(newMessages);
+        
+        // Nếu có tin nhắn mới, hiển thị indicator
+        if (newMessages.length > previousMessagesCount) {
+          setNewMessageIndicator(true);
+          setTimeout(() => setNewMessageIndicator(false), 1500);
+        }
         
         // Mark messages as read
         await markMessagesAsRead(conversationId);
@@ -281,8 +319,8 @@ const MessageScreen = () => {
       const now = new Date();
       const diff = now.getTime() - date.getTime();
       
-      if (diff < 60000) return 'Now';
-      if (diff < 3600000) return `${Math.floor(diff / 60000)}m`;
+      if (diff < 60000) return 'Just now';
+      if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
       if (diff < 86400000) return date.toLocaleTimeString('en-US', { 
         hour: '2-digit', 
         minute: '2-digit',
@@ -387,6 +425,7 @@ const MessageScreen = () => {
               isMe ? styles.myMessageTime : styles.theirMessageTime
             ]}>
               {formatMessageTime(item.timestamp)}
+              {isMe && (item.read ? ' ✓✓' : ' ✓')}
             </Text>
           </View>
         </View>
@@ -396,7 +435,10 @@ const MessageScreen = () => {
 
   const renderConversationItem = ({ item }: { item: Conversation }) => (
     <TouchableOpacity
-      style={styles.conversationItem}
+      style={[
+        styles.conversationItem,
+        selectedConversation?._id === item._id && styles.selectedConversation
+      ]}
       onPress={() => {
         setSelectedConversation(item);
         loadMessages(item._id);
@@ -415,12 +457,19 @@ const MessageScreen = () => {
             </Text>
           </View>
         )}
+        {item.participant.role === 'doctor' && (
+          <View style={styles.roleBadge}>
+            <Icon name="verified" size={12} color="#1877F2" />
+          </View>
+        )}
       </View>
       
       <View style={styles.conversationInfo}>
         <View style={styles.conversationHeader}>
           <Text style={styles.conversationName} numberOfLines={1}>
             {item.participant.name}
+            {item.participant.role === 'doctor' && ' 👨‍⚕️'}
+            {item.participant.role === 'patient' && ' 👤'}
           </Text>
           <Text style={styles.conversationTime}>
             {formatTime(item.last_message_at)}
@@ -435,7 +484,7 @@ const MessageScreen = () => {
             ]}
             numberOfLines={2}
           >
-            {item.last_message?.message || 'No messages yet'}
+            {item.last_message?.message || 'Start a conversation...'}
           </Text>
           {item.unread_count > 0 && (
             <View style={styles.unreadIndicator} />
@@ -453,6 +502,12 @@ const MessageScreen = () => {
       }
     };
   }, [pollingInterval]);
+
+  // Polling indicator animation
+  const pollingOpacity = pollingAnimation.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.3, 1],
+  });
 
   if (selectedConversation) {
     return (
@@ -480,9 +535,11 @@ const MessageScreen = () => {
             <View>
               <Text style={styles.chatPartnerName}>
                 {selectedConversation.participant.name}
+                {selectedConversation.participant.role === 'doctor' && ' 👨‍⚕️'}
               </Text>
               <Text style={styles.chatPartnerStatus}>
                 {selectedConversation.participant.role === 'doctor' ? 'Doctor' : 'Patient'}
+                {selectedConversation.medical_record_id && ' • Medical Record Linked'}
               </Text>
             </View>
           </View>
@@ -499,6 +556,14 @@ const MessageScreen = () => {
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* New Message Indicator */}
+        {newMessageIndicator && (
+          <Animated.View style={[styles.newMessageIndicator, { opacity: pollingOpacity }]}>
+            <Icon name="arrow-upward" size={16} color="#FFFFFF" />
+            <Text style={styles.newMessageIndicatorText}>New messages</Text>
+          </Animated.View>
+        )}
 
         {/* Messages List */}
         <KeyboardAvoidingView 
@@ -522,6 +587,15 @@ const MessageScreen = () => {
               showsVerticalScrollIndicator={false}
               onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
               onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
+              ListEmptyComponent={
+                <View style={styles.emptyChatState}>
+                  <Icon name="chat-bubble-outline" size={64} color="#E4E6EB" />
+                  <Text style={styles.emptyChatStateTitle}>Start a conversation</Text>
+                  <Text style={styles.emptyChatStateText}>
+                    Send your first message to {selectedConversation.participant.name}
+                  </Text>
+                </View>
+              }
             />
           )}
 
@@ -576,21 +650,58 @@ const MessageScreen = () => {
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       
-      {/* Header */}
+      {/* Header với nút Back về Home */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Chats</Text>
+        <TouchableOpacity 
+          style={styles.homeButton}
+          onPress={() => navigation.navigate('Home')}
+        >
+          <Icon name="home" size={24} color="#1877F2" />
+        </TouchableOpacity>
+        
+        <Text style={styles.headerTitle}>Messages</Text>
+        
         <View style={styles.headerActions}>
+          {/* Polling Indicator */}
+          <View style={styles.pollingIndicatorContainer}>
+            <Animated.View style={[styles.pollingDot, { opacity: pollingOpacity }]} />
+            <Text style={styles.pollingText}>
+              {isPollingActive ? 'Live' : 'Paused'}
+            </Text>
+          </View>
+          
           <TouchableOpacity 
             style={styles.headerIconButton}
-            onPress={loadConversations}
+            onPress={() => {
+              loadConversations(true);
+              setNewMessageIndicator(true);
+              setTimeout(() => setNewMessageIndicator(false), 1000);
+            }}
           >
             <Icon name="refresh" size={24} color="#1877F2" />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.headerIconButton}>
-            <Icon name="edit" size={24} color="#1877F2" />
+          
+          <TouchableOpacity 
+            style={styles.headerIconButton}
+            onPress={() => setIsPollingActive(!isPollingActive)}
+          >
+            <Icon 
+              name={isPollingActive ? 'pause' : 'play-arrow'} 
+              size={24} 
+              color="#1877F2" 
+            />
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Last Poll Time */}
+      {lastPollTime && (
+        <View style={styles.lastPollContainer}>
+          <Text style={styles.lastPollText}>
+            Last updated: {lastPollTime}
+          </Text>
+        </View>
+      )}
 
       {/* Search Bar */}
       <View style={styles.searchContainer}>
@@ -598,11 +709,16 @@ const MessageScreen = () => {
           <Icon name="search" size={20} color="#65676B" style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search messages"
+            placeholder="Search conversations..."
             placeholderTextColor="#65676B"
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
+          {searchQuery ? (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <Icon name="close" size={20} color="#65676B" />
+            </TouchableOpacity>
+          ) : null}
         </View>
       </View>
 
@@ -613,29 +729,47 @@ const MessageScreen = () => {
           onPress={() => setActiveTab('chats')}
         >
           <Text style={[styles.tabText, activeTab === 'chats' && styles.activeTabText]}>
-            Chats
+            <Icon name="chat" size={16} /> Chats
           </Text>
+          <View style={styles.unreadTotalBadge}>
+            <Text style={styles.unreadTotalCount}>
+              {conversations.reduce((sum, conv) => sum + conv.unread_count, 0)}
+            </Text>
+          </View>
         </TouchableOpacity>
+        
         <TouchableOpacity
           style={[styles.tab, activeTab === 'people' && styles.activeTab]}
           onPress={() => setActiveTab('people')}
         >
           <Text style={[styles.tabText, activeTab === 'people' && styles.activeTabText]}>
-            People
+            <Icon name="people" size={16} /> People
           </Text>
         </TouchableOpacity>
       </View>
+
+      {/* New Message Notification */}
+      {newMessageIndicator && (
+        <Animated.View style={[styles.globalNotification, { opacity: pollingOpacity }]}>
+          <Icon name="notifications" size={16} color="#FFFFFF" />
+          <Text style={styles.globalNotificationText}>New messages received!</Text>
+        </Animated.View>
+      )}
 
       {/* Conversations List */}
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#1877F2" />
           <Text style={styles.loadingText}>Loading conversations...</Text>
+          <Animated.Text style={[styles.pollingStatus, { opacity: pollingOpacity }]}>
+            Polling for new messages...
+          </Animated.Text>
         </View>
       ) : (
         <FlatList
           data={conversations.filter(conv => 
-            conv.participant.name.toLowerCase().includes(searchQuery.toLowerCase())
+            conv.participant.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            conv.participant.email.toLowerCase().includes(searchQuery.toLowerCase())
           )}
           keyExtractor={(item) => item._id}
           renderItem={renderConversationItem}
@@ -645,18 +779,32 @@ const MessageScreen = () => {
           refreshControl={
             <RefreshControl
               refreshing={loading}
-              onRefresh={loadConversations}
+              onRefresh={() => loadConversations(true)}
               colors={['#1877F2']}
+              tintColor="#1877F2"
             />
           }
           ListEmptyComponent={
             <View style={styles.emptyState}>
-              <Icon name="chat" size={64} color="#E4E6EB" />
-              <Text style={styles.emptyStateTitle}>No conversations</Text>
+              <Icon name="chat-bubble-outline" size={80} color="#E4E6EB" />
+              <Text style={styles.emptyStateTitle}>No conversations yet</Text>
               <Text style={styles.emptyStateText}>
-                {searchQuery ? 'No conversations match your search' : 'Start a conversation with your patients'}
+                {searchQuery ? 'No conversations match your search' : 'Start a conversation with your doctor or patient'}
               </Text>
+              <TouchableOpacity style={styles.startChatButton}>
+                <Icon name="add-comment" size={20} color="#FFFFFF" />
+                <Text style={styles.startChatButtonText}>Start New Chat</Text>
+              </TouchableOpacity>
             </View>
+          }
+          ListHeaderComponent={
+            conversations.length > 0 ? (
+              <View style={styles.listHeader}>
+                <Text style={styles.listHeaderText}>
+                  {conversations.length} conversation{conversations.length !== 1 ? 's' : ''}
+                </Text>
+              </View>
+            ) : null
           }
         />
       )}
@@ -679,8 +827,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#E4E6EB',
   },
+  homeButton: {
+    padding: 8,
+  },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '700',
     color: '#1C1E21',
   },
@@ -691,6 +842,43 @@ const styles = StyleSheet.create({
   headerIconButton: {
     padding: 8,
     marginLeft: 8,
+  },
+  // Polling Indicator
+  pollingIndicatorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: '#F0F2F5',
+    borderRadius: 12,
+  },
+  pollingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#4CAF50',
+    marginRight: 4,
+  },
+  pollingText: {
+    fontSize: 12,
+    color: '#65676B',
+    fontWeight: '500',
+  },
+  lastPollContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+    backgroundColor: '#F8F9FA',
+    alignItems: 'center',
+  },
+  lastPollText: {
+    fontSize: 11,
+    color: '#65676B',
+  },
+  pollingStatus: {
+    fontSize: 12,
+    color: '#1877F2',
+    marginTop: 8,
   },
   // Search Styles
   searchContainer: {
@@ -721,8 +909,11 @@ const styles = StyleSheet.create({
   },
   tab: {
     flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 14,
+    gap: 8,
   },
   activeTab: {
     borderBottomWidth: 3,
@@ -736,6 +927,79 @@ const styles = StyleSheet.create({
   activeTabText: {
     color: '#1877F2',
   },
+  unreadTotalBadge: {
+    backgroundColor: '#1877F2',
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  unreadTotalCount: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  // Notification Styles
+  globalNotification: {
+    position: 'absolute',
+    top: 100,
+    left: 16,
+    right: 16,
+    backgroundColor: '#1877F2',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    zIndex: 1000,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  globalNotificationText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  newMessageIndicator: {
+    position: 'absolute',
+    top: 60,
+    alignSelf: 'center',
+    backgroundColor: '#1877F2',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    zIndex: 1000,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  newMessageIndicatorText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  // List Header
+  listHeader: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#F8F9FA',
+  },
+  listHeaderText: {
+    fontSize: 12,
+    color: '#65676B',
+    fontWeight: '500',
+  },
   // Conversations List Styles
   conversationsList: {
     flex: 1,
@@ -747,8 +1011,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
     backgroundColor: '#FFFFFF',
+  },
+  selectedConversation: {
+    backgroundColor: '#F0F7FF',
+    borderLeftWidth: 4,
+    borderLeftColor: '#1877F2',
   },
   avatarContainer: {
     position: 'relative',
@@ -758,6 +1027,19 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
+  },
+  roleBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: '#FFFFFF',
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E4E6EB',
   },
   unreadBadge: {
     position: 'absolute',
@@ -836,9 +1118,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   chatAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     marginRight: 12,
   },
   chatPartnerName: {
@@ -877,6 +1159,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#65676B',
     fontWeight: '500',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   messageContainer: {
     flexDirection: 'row',
@@ -909,6 +1196,11 @@ const styles = StyleSheet.create({
   theirMessageBubble: {
     backgroundColor: '#FFFFFF',
     borderBottomLeftRadius: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   continuationMessage: {
     marginLeft: 40, // Space for avatar
@@ -998,7 +1290,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 60,
+    paddingVertical: 80,
   },
   emptyStateTitle: {
     fontSize: 18,
@@ -1011,6 +1303,39 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#65676B',
     textAlign: 'center',
+    marginBottom: 24,
+  },
+  emptyChatState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  emptyChatStateTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1C1E21',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptyChatStateText: {
+    fontSize: 14,
+    color: '#65676B',
+    textAlign: 'center',
+  },
+  startChatButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1877F2',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 24,
+    gap: 8,
+  },
+  startChatButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 

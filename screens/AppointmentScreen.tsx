@@ -50,7 +50,9 @@ const API_BASE_URL = 'http://localhost:3000';
 
 const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
   const { doctor } = route.params as { doctor: Doctor };
-  const [selectedDate, setSelectedDate] = useState(new Date());
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1); // Ngày mai
+  const [selectedDate, setSelectedDate] = useState(tomorrow); // Khởi tạo với ngày mai
   const [selectedTime, setSelectedTime] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [symptoms, setSymptoms] = useState('');
@@ -153,9 +155,30 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
       setShowDatePicker(false);
     }
     if (date) {
+      // Kiểm tra nếu ngày được chọn là hôm nay
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const selected = new Date(date);
+      selected.setHours(0, 0, 0, 0);
+      
+      if (selected <= today) {
+        Alert.alert(
+          'Invalid Date',
+          'Please select a date starting from tomorrow.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+      
       setSelectedDate(date);
       setSelectedTime('');
     }
+  };
+
+  const getTomorrowDate = () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return tomorrow;
   };
 
   const getSlotStatus = (time: string) => {
@@ -185,6 +208,17 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
 
     if (symptoms.length < 5 && symptoms.length > 0) {
       Alert.alert('Symptoms Description', 'Please provide a more detailed description of your symptoms (minimum 5 characters)');
+      return false;
+    }
+
+    // Kiểm tra ngày đặt lịch
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const selected = new Date(selectedDate);
+    selected.setHours(0, 0, 0, 0);
+    
+    if (selected <= today) {
+      Alert.alert('Invalid Date', 'Appointments can only be booked for tomorrow onwards.');
       return false;
     }
 
@@ -228,6 +262,18 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
 
       if (!doctor?._id || !selectedDate || !selectedTime) {
         Alert.alert('Validation Error', 'Please fill all required fields.');
+        setIsLoading(false);
+        return;
+      }
+
+      // Kiểm tra cuối cùng ngày hợp lệ trước khi gửi
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const selected = new Date(selectedDate);
+      selected.setHours(0, 0, 0, 0);
+      
+      if (selected <= today) {
+        Alert.alert('Invalid Date', 'Appointments can only be booked for tomorrow onwards.');
         setIsLoading(false);
         return;
       }
@@ -331,8 +377,8 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
         <Ionicons name="person-circle" size={50} color="#1976d2" />
       </View>
       <View style={styles.doctorInfo}>
-          <Text style={styles.name}>Dr. {doctor.user_id?.name || 'Unknown Doctor'}</Text>
-          <Text style={styles.specialty}>{doctor.specialty_id?.name || 'General Practice'}</Text>
+        <Text style={styles.doctorName}>Dr. {doctor.user_id?.name || 'Unknown Doctor'}</Text>
+        <Text style={styles.doctorSpecialty}>{doctor.specialty_id?.name || 'General Practice'}</Text>
         <View style={styles.doctorDetails}>
           {doctor.years_of_experience && (
             <Text style={styles.doctorDetail}>
@@ -360,118 +406,131 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
     </View>
   );
 
-  const renderDateTimeSection = () => (
-    <Animated.View 
-      style={[
-        styles.section,
-        { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
-      ]}
-    >
-      <View style={styles.sectionHeader}>
-        <Ionicons name="time-outline" size={20} color="#1976d2" />
-        <Text style={styles.sectionTitle}>Select Date & Time</Text>
-        <TouchableOpacity onPress={onRefresh} style={styles.refreshButton}>
-          <Ionicons name="refresh" size={16} color="#1976d2" />
-          <Text style={styles.refreshText}>Refresh</Text>
+  const renderDateTimeSection = () => {
+    const today = new Date();
+    const tomorrow = new Date();
+    tomorrow.setDate(today.getDate() + 1);
+    
+    return (
+      <Animated.View 
+        style={[
+          styles.section,
+          { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
+        ]}
+      >
+        <View style={styles.sectionHeader}>
+          <Ionicons name="time-outline" size={20} color="#1976d2" />
+          <Text style={styles.sectionTitle}>Select Date & Time</Text>
+          <TouchableOpacity onPress={onRefresh} style={styles.refreshButton}>
+            <Ionicons name="refresh" size={16} color="#1976d2" />
+            <Text style={styles.refreshText}>Refresh</Text>
+          </TouchableOpacity>
+        </View>
+        
+        <TouchableOpacity 
+          style={styles.datePickerButton}
+          onPress={() => setShowDatePicker(true)}
+        >
+          <Ionicons name="calendar-outline" size={20} color="#1976d2" />
+          <Text style={styles.dateText}>
+            {selectedDate.toDateString()}
+          </Text>
+          <Ionicons name="chevron-forward" size={16} color="#666" />
         </TouchableOpacity>
-      </View>
-      
-      <TouchableOpacity 
-        style={styles.datePickerButton}
-        onPress={() => setShowDatePicker(true)}
-      >
-        <Ionicons name="calendar-outline" size={20} color="#1976d2" />
-        <Text style={styles.dateText}>
-          {selectedDate.toDateString()}
+
+        <Text style={styles.dateNote}>
+          <Ionicons name="information-circle-outline" size={14} color="#666" />
+          <Text style={{ marginLeft: 4 }}>
+            Appointments can only be booked from tomorrow onwards
+          </Text>
         </Text>
-        <Ionicons name="chevron-forward" size={16} color="#666" />
-      </TouchableOpacity>
 
-      {showDatePicker && (
-        <DateTimePicker
-          value={selectedDate}
-          mode="date"
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-          onChange={handleDateChange}
-          minimumDate={new Date()}
-          maximumDate={new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)}
-        />
-      )}
+        {showDatePicker && (
+          <DateTimePicker
+            value={selectedDate}
+            mode="date"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            onChange={handleDateChange}
+            minimumDate={tomorrow} // Chỉ cho phép chọn từ ngày mai
+            maximumDate={new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)}
+          />
+        )}
 
-      <Text style={styles.timeSectionTitle}>Available Time Slots</Text>
-      
-      {loadingSlots ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="small" color="#1976d2" />
-          <Text style={styles.loadingText}>Checking availability...</Text>
-        </View>
-      ) : (
-        <View style={styles.timeSlotsContainer}>
-          {availableSlots.map((slot) => {
-            const status = getSlotStatus(slot.time);
-            
-            return (
-              <TouchableOpacity
-                key={slot.time}
-                style={[
-                  styles.timeSlot,
-                  status === 'selected' && styles.timeSlotSelected,
-                  status === 'unavailable' && styles.timeSlotUnavailable,
-                  status === 'reserved' && styles.timeSlotReserved,
-                  status === 'loading' && styles.timeSlotLoading
-                ]}
-                onPress={() => status === 'available' && setSelectedTime(slot.time)}
-                disabled={status !== 'available'}
-              >
-                <Text style={[
-                  styles.timeSlotText,
-                  status === 'selected' && styles.timeSlotTextSelected,
-                  status === 'unavailable' && styles.timeSlotTextUnavailable,
-                  status === 'reserved' && styles.timeSlotTextReserved,
-                ]}>
-                  {slot.time}
-                </Text>
-                
-                {status === 'unavailable' && (
-                  <Ionicons name="close-circle" size={16} color="#ff6b6b" />
-                )}
-                {status === 'reserved' && (
-                  <Ionicons name="lock-closed" size={16} color="#ffa726" />
-                )}
-                {status === 'loading' && (
-                  <ActivityIndicator size="small" color="#666" />
-                )}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      )}
+        <Text style={styles.timeSectionTitle}>Available Time Slots</Text>
+        
+        {loadingSlots ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="small" color="#1976d2" />
+            <Text style={styles.loadingText}>Checking availability...</Text>
+          </View>
+        ) : (
+          <View style={styles.timeSlotsContainer}>
+            {availableSlots.map((slot) => {
+              const status = getSlotStatus(slot.time);
+              
+              return (
+                <TouchableOpacity
+                  key={slot.time}
+                  style={[
+                    styles.timeSlot,
+                    status === 'selected' && styles.timeSlotSelected,
+                    status === 'unavailable' && styles.timeSlotUnavailable,
+                    status === 'reserved' && styles.timeSlotReserved,
+                    status === 'loading' && styles.timeSlotLoading
+                  ]}
+                  onPress={() => status === 'available' && setSelectedTime(slot.time)}
+                  disabled={status !== 'available'}
+                >
+                  <Text style={[
+                    styles.timeSlotText,
+                    status === 'selected' && styles.timeSlotTextSelected,
+                    status === 'unavailable' && styles.timeSlotTextUnavailable,
+                    status === 'reserved' && styles.timeSlotTextReserved,
+                  ]}>
+                    {slot.time}
+                  </Text>
+                  
+                  {status === 'unavailable' && (
+                    <Ionicons name="close-circle" size={16} color="#ff6b6b" />
+                  )}
+                  {status === 'reserved' && (
+                    <Ionicons name="lock-closed" size={16} color="#ffa726" />
+                  )}
+                  {status === 'loading' && (
+                    <ActivityIndicator size="small" color="#666" />
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
 
-      <View style={styles.legendContainer}>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendColor, styles.legendAvailable]} />
-          <Text style={styles.legendText}>Available</Text>
+        <View style={styles.legendContainer}>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendColor, styles.legendAvailable]} />
+            <Text style={styles.legendText}>Available</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendColor, styles.legendReserved]} />
+            <Text style={styles.legendText}>Reserved</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendColor, styles.legendUnavailable]} />
+            <Text style={styles.legendText}>Unavailable</Text>
+          </View>
         </View>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendColor, styles.legendReserved]} />
-          <Text style={styles.legendText}>Reserved</Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendColor, styles.legendUnavailable]} />
-          <Text style={styles.legendText}>Unavailable</Text>
-        </View>
-      </View>
 
-      <TouchableOpacity 
-        style={[styles.nextButton, !selectedTime && styles.nextButtonDisabled]}
-        onPress={() => setCurrentStep(2)}
-        disabled={!selectedTime}
-      >
-        <Text style={styles.nextButtonText}>Next: Symptoms</Text>
-        <Ionicons name="arrow-forward" size={16} color="white" />
-      </TouchableOpacity>
-    </Animated.View>
-  );
+        <TouchableOpacity 
+          style={[styles.nextButton, !selectedTime && styles.nextButtonDisabled]}
+          onPress={() => setCurrentStep(2)}
+          disabled={!selectedTime}
+        >
+          <Text style={styles.nextButtonText}>Next: Symptoms</Text>
+          <Ionicons name="arrow-forward" size={16} color="white" />
+        </TouchableOpacity>
+      </Animated.View>
+    );
+  };
 
   const renderSymptomsSection = () => (
     <Animated.View 
@@ -536,79 +595,102 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
     </Animated.View>
   );
 
-  const renderConfirmationSection = () => (
-    <Animated.View 
-      style={[
-        styles.section,
-        { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
-      ]}
-    >
-      <View style={styles.confirmationHeader}>
-        <Ionicons name="checkmark-circle" size={60} color="#4CAF50" />
-        <Text style={styles.confirmationTitle}>Review Your Appointment</Text>
-      </View>
+  const renderConfirmationSection = () => {
+    // Kiểm tra xem ngày đã chọn có hợp lệ không
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const selected = new Date(selectedDate);
+    selected.setHours(0, 0, 0, 0);
+    const isDateValid = selected > today;
+    
+    return (
+      <Animated.View 
+        style={[
+          styles.section,
+          { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
+        ]}
+      >
+        <View style={styles.confirmationHeader}>
+          <Ionicons name="checkmark-circle" size={60} color="#4CAF50" />
+          <Text style={styles.confirmationTitle}>Review Your Appointment</Text>
+        </View>
 
-      <View style={styles.appointmentSummary}>
-        <Text style={styles.summaryTitle}>Appointment Details</Text>
-        
-        <View style={styles.summaryItem}>
-          <Text style={styles.summaryLabel}>Doctor</Text>
-          <Text style={styles.summaryValue}>Dr. {doctor.user_id?.name || 'Unknown Doctor'}</Text>
-        </View>
-        
-        <View style={styles.summaryItem}>
-          <Text style={styles.summaryLabel}>Specialty</Text>
-          <Text style={styles.summaryValue}>{doctor.specialty_id?.name || 'General Practitioner'}</Text>
-        </View>
-        
-        <View style={styles.summaryItem}>
-          <Text style={styles.summaryLabel}>Date & Time</Text>
-          <Text style={styles.summaryValue}>
-            {selectedDate.toDateString()} at {selectedTime}
-          </Text>
-        </View>
-        
-        <View style={styles.summaryItem}>
-          <Text style={styles.summaryLabel}>Consultation Fee</Text>
-          <Text style={styles.summaryValue}>
-            ${doctor.consultation_fee || '150'}
-          </Text>
-        </View>
-        
-        <View style={styles.summaryItem}>
-          <Text style={styles.summaryLabel}>Symptoms</Text>
-          <Text style={styles.summaryValue}>
-            {symptoms || 'General consultation'}
-          </Text>
-        </View>
-      </View>
+        {!isDateValid && (
+          <View style={styles.warningBox}>
+            <Ionicons name="warning-outline" size={20} color="#ff9800" />
+            <Text style={styles.warningText}>
+              The selected date has already passed. Please go back and select a future date.
+            </Text>
+          </View>
+        )}
 
-      <View style={styles.buttonRow}>
-        <TouchableOpacity 
-          style={styles.backButton}
-          onPress={() => setCurrentStep(2)}
-        >
-          <Ionicons name="arrow-back" size={16} color="#1976d2" />
-          <Text style={styles.backButtonText}>Edit Details</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={[styles.bookButton, isLoading && styles.bookButtonDisabled]}
-          onPress={showConfirmation}
-          disabled={isLoading}
-        >
-          {isLoading ? (
-            <ActivityIndicator size="small" color="white" />
-          ) : (
-            <>
-              <Text style={styles.bookButtonText}>Confirm Booking</Text>
-              <Ionicons name="checkmark" size={16} color="white" />
-            </>
-          )}
-        </TouchableOpacity>
-      </View>
-    </Animated.View>
-  );
+        <View style={styles.appointmentSummary}>
+          <Text style={styles.summaryTitle}>Appointment Details</Text>
+          
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryLabel}>Doctor</Text>
+            <Text style={styles.summaryValue}>Dr. {doctor.user_id?.name || 'Unknown Doctor'}</Text>
+          </View>
+          
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryLabel}>Specialty</Text>
+            <Text style={styles.summaryValue}>{doctor.specialty_id?.name || 'General Practitioner'}</Text>
+          </View>
+          
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryLabel}>Date & Time</Text>
+            <Text style={styles.summaryValue}>
+              {selectedDate.toDateString()} at {selectedTime}
+            </Text>
+          </View>
+          
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryLabel}>Consultation Fee</Text>
+            <Text style={styles.summaryValue}>
+              ${doctor.consultation_fee || '150'}
+            </Text>
+          </View>
+          
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryLabel}>Symptoms</Text>
+            <Text style={styles.summaryValue}>
+              {symptoms || 'General consultation'}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.buttonRow}>
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={() => setCurrentStep(2)}
+          >
+            <Ionicons name="arrow-back" size={16} color="#1976d2" />
+            <Text style={styles.backButtonText}>Edit Details</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[
+              styles.bookButton, 
+              (isLoading || !isDateValid) && styles.bookButtonDisabled
+            ]}
+            onPress={showConfirmation}
+            disabled={isLoading || !isDateValid}
+          >
+            {isLoading ? (
+              <ActivityIndicator size="small" color="white" />
+            ) : (
+              <>
+                <Text style={styles.bookButtonText}>
+                  {isDateValid ? 'Confirm Booking' : 'Select Valid Date'}
+                </Text>
+                <Ionicons name="checkmark" size={16} color="white" />
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -836,13 +918,21 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8f9fa',
     borderRadius: 12,
     padding: 16,
-    marginBottom: 20,
+    marginBottom: 8,
   },
   dateText: {
     flex: 1,
     fontSize: 16,
     color: '#333',
     marginLeft: 12,
+  },
+  dateNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 16,
+    paddingHorizontal: 4,
   },
   timeSectionTitle: {
     fontSize: 16,
@@ -1019,6 +1109,7 @@ const styles = StyleSheet.create({
   },
   bookButtonDisabled: {
     backgroundColor: '#81c784',
+    opacity: 0.6,
   },
   bookButtonText: {
     color: 'white',
@@ -1034,6 +1125,22 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#333',
     marginTop: 12,
+  },
+  warningBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff8e1',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#ffecb3',
+  },
+  warningText: {
+    flex: 1,
+    marginLeft: 8,
+    color: '#ff6f00',
+    fontSize: 14,
   },
   appointmentSummary: {
     backgroundColor: '#f8f9fa',

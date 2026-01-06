@@ -61,7 +61,7 @@ const ChatOptionScreen: React.FC = () => {
     } catch (error) {
       console.error('Error saving language preference:', error);
     }
-    navigation.navigate('ChatWidget' as never);
+    navigation.navigate('ChatWiget' as never);
   };
 
   const handleBackToHome = () => {

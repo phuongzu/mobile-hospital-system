@@ -51,7 +51,7 @@ interface TreatmentStep {
   dosage?: string;
   duration?: string;
   instructions?: string;
-  status: 'pending' | 'in-progress' | 'completed' | 'approved';
+  status: 'pending' | 'in-progress' | 'completed' | 'approved' | 'rejected';
   completedAt?: Date;
   patient_message?: string;
   doctorNotes?: string;
@@ -168,11 +168,12 @@ const RecordDetail: React.FC = () => {
     ]).start();
   }, []);
 
-  const onRefresh = useCallback(() => {
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
+    await fetchRecordData();
     setTimeout(() => {
       setRefreshing(false);
-    }, 1500);
+    }, 500);
   }, []);
 
   // Mặc định userRole là patient
@@ -304,7 +305,7 @@ const loadMessages = async () => {
   try {
     const token = await AsyncStorage.getItem('authToken');
     const response = await axios.get(
-      `${API_BASE_URL}/messages/record/${record._id}`, // ĐÃ SỬA ENDPOINT
+      `${API_BASE_URL}/messages/record/${record._id}`, 
       { headers: { Authorization: `Bearer ${token}` } }
     );
 
@@ -338,16 +339,6 @@ const loadMessages = async () => {
         timestamp: new Date(Date.now() - 1800000),
         read: true,
         medical_record_id: record._id
-      },
-      {
-        _id: '3',
-        sender_id: record.doctor_id._id,
-        receiver_id: record.user_id?._id || '',
-        message: 'That\'s great to hear! Remember to follow the instructions carefully.',
-        message_type: 'text',
-        timestamp: new Date(Date.now() - 600000),
-        read: true,
-        medical_record_id: record._id
       }
     ]);
   } finally {
@@ -378,7 +369,7 @@ const sendMessage = async () => {
   try {
     const token = await AsyncStorage.getItem('authToken');
     const response = await axios.post(
-      `${API_BASE_URL}/messages/send`, // ĐÃ SỬA ENDPOINT
+      `${API_BASE_URL}/messages/send`,
       {
         receiver_id: record.doctor_id._id,
         message: newMessage.trim(),
@@ -396,16 +387,13 @@ const sendMessage = async () => {
           msg._id === tempMessageId ? response.data.data.message : msg
         )
       );
-      showNotification('Message sent successfully', 'success');
     }
   } catch (error) {
     console.error('Error sending message:', error);
     showNotification('Failed to send message', 'danger');
-    // Revert optimistic update on error
     setMessages(prev => prev.filter(msg => msg._id !== tempMessageId));
   } finally {
     setSendingMessage(false);
-    // Auto scroll to bottom
     setTimeout(() => {
       flatListRef.current?.scrollToEnd({ animated: true });
     }, 100);
@@ -415,6 +403,8 @@ const sendMessage = async () => {
   const fetchRecordData = async () => {
     try {
       const token = await AsyncStorage.getItem('authToken');
+      // Fetch specifically this record if endpoint exists, otherwise list
+      // Assuming my-records returns a list
       const response = await axios.get(
         `${API_BASE_URL}/medical-records/my-records`,
         { headers: { Authorization: `Bearer ${token}` } }
@@ -439,7 +429,6 @@ const sendMessage = async () => {
       const token = await AsyncStorage.getItem('authToken');
       const firstStep = treatmentPlan[0];
       
-      // Sử dụng endpoint đúng
       const response = await axios.patch(
         `${API_BASE_URL}/medical-records/${record._id}/steps/${firstStep.stepNumber}/activate`,
         {},
@@ -449,6 +438,7 @@ const sendMessage = async () => {
       );
 
       if (response.data.success) {
+        // Update local state with the returned data to ensure sync
         setRecord(response.data.data.record);
         setTreatmentPlan(response.data.data.record.treatment_plan);
         showNotification('🎉 Treatment started successfully!', 'success');
@@ -457,26 +447,21 @@ const sendMessage = async () => {
     } catch (error: any) {
       console.error('Error starting treatment via backend:', error);
       
-      // Fallback đơn giản
-      console.log('🔄 Using local state update for starting treatment');
-      const updatedTreatmentPlan = treatmentPlan.map((step, index) => {
-        if (index === 0) {
-          return { ...step, status: 'in-progress' as const };
-        }
-        return step;
-      });
-      
-      setTreatmentPlan(updatedTreatmentPlan);
-      showNotification('🎉 Treatment started successfully!', 'success');
+      // CRITICAL: Do NOT use fallback that desyncs state if backend failed.
+      // If backend fails with 404/500, user should know, rather than seeing a fake success.
+      if (error.response?.status === 404) {
+         showNotification('Server error: Could not find treatment step to start.', 'danger');
+      } else if (error.response?.status === 403) {
+         showNotification('Permission denied.', 'danger');
+      } else {
+         showNotification('Failed to start treatment. Please try again.', 'danger');
+      }
     } finally {
       setLoading(false);
     }
   };
 
   const handleCompleteStep = async (stepNumber: number) => {
-    console.log('🎯 [FRONTEND] Completing step:', stepNumber);
-    console.log('🔍 [FRONTEND] Record ID:', record._id);
-    
     setLoading(true);
     setActiveStep(stepNumber.toString());
     
@@ -484,196 +469,48 @@ const sendMessage = async () => {
       const token = await AsyncStorage.getItem('authToken');
       
       if (!token) {
-        console.log('❌ [FRONTEND] No token found');
-        showNotification('Authentication required. Please login again.', 'danger');
+        showNotification('Authentication required.', 'danger');
         setLoading(false);
-        setActiveStep(null);
         return;
       }
 
-      if (!record._id) {
-        console.log('❌ [FRONTEND] No record ID found');
-        showNotification('Invalid record data.', 'danger');
-        setLoading(false);
-        setActiveStep(null);
-        return;
-      }
+      // Use the standardized route
+      const url = `${API_BASE_URL}/medical-records/${record._id}/steps/${stepNumber}/complete`;
 
-      // Get the actual step object to access its _id
-      const stepToComplete = treatmentPlan.find(step => step.stepNumber === stepNumber);
-      if (!stepToComplete) {
-        console.log('❌ [FRONTEND] Step not found:', stepNumber);
-        showNotification('Step not found.', 'danger');
-        setLoading(false);
-        setActiveStep(null);
-        return;
-      }
-
-      console.log('🔍 [FRONTEND] Step details:', stepToComplete);
-
-      let response;
-      let endpointUsed = '';
-      let lastError = null;
-
-      // Define all possible endpoint patterns to try
-      const endpointAttempts = [
-        {
-          name: 'Option 1 (with step _id)',
-          url: `${API_BASE_URL}/medical-records/${record._id}/steps/${stepToComplete._id}/complete`,
-          data: { 
-            patientMessage: "I have completed this step",
-            status: 'completed'
-          },
-          condition: !!stepToComplete._id
+      const response = await axios.patch(
+        url,
+        { 
+          patientMessage: "I have completed this step",
+          status: 'completed'
         },
-        {
-          name: 'Option 2 (with stepNumber in path)',
-          url: `${API_BASE_URL}/medical-records/${record._id}/steps/${stepNumber}/complete`,
-          data: { 
-            patientMessage: "I have completed this step"
-          },
-          condition: true
-        },
-        {
-          name: 'Option 3 (original endpoint)',
-          url: `${API_BASE_URL}/medical-records/${record._id}/complete-step/${stepNumber}`,
-          data: { 
-            patientMessage: "I have completed this step"
-          },
-          condition: true
-        },
-        {
-          name: 'Option 4 (simple payload)',
-          url: `${API_BASE_URL}/medical-records/${record._id}/complete-step/${stepNumber}`,
-          data: {},
-          condition: true
+        { 
+          headers: { 
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          } 
         }
-      ];
+      );
 
-      // Try each endpoint pattern
-      for (const attempt of endpointAttempts) {
-        if (!attempt.condition) continue;
-        
-        try {
-          console.log(`🔄 [FRONTEND] Trying ${attempt.name}`);
-          endpointUsed = attempt.name;
-          
-          response = await axios.patch(
-            attempt.url,
-            attempt.data,
-            { 
-              headers: { 
-                Authorization: `Bearer ${token}`,
-                'Content-Type': 'application/json'
-              } 
-            }
-          );
-          
-          console.log(`✅ [FRONTEND] Success with ${attempt.name}`);
-          break; // Success, break out of loop
-          
-        } catch (error: any) {
-          lastError = error;
-          console.log(`❌ [FRONTEND] Failed with ${attempt.name}:`, error.response?.data || error.message);
-          
-          // If it's a 400 error with specific message, we might want to handle it differently
-          if (error.response?.status === 400) {
-            const errorMsg = error.response?.data?.message || '';
-            if (errorMsg.includes('already completed') || errorMsg.includes('invalid')) {
-              // Don't try other endpoints for these specific errors
-              break;
-            }
-          }
-          
-          // Continue to next attempt
-          continue;
-        }
-      }
-
-      // Check if any attempt was successful
-      if (response?.data?.success) {
-        console.log('✅ [FRONTEND] Backend response success:', response.data);
-        console.log('🔍 [FRONTEND] Endpoint used:', endpointUsed);
-        
+      if (response.data.success) {
         setRecord(response.data.data.record);
         setTreatmentPlan(response.data.data.record.treatment_plan);
         showNotification(`✅ Step ${stepNumber} completed successfully!`, 'success');
-        
-      } else if (lastError) {
-        // All attempts failed, throw the last error
-        throw lastError;
-      } else {
-        throw new Error('No successful endpoint attempt and no error recorded');
       }
       
     } catch (error: any) {
-      console.error('❌ [FRONTEND] All endpoint attempts failed:', error);
-      console.log('🔍 [FRONTEND] Final error details:', {
-        status: error.response?.status,
-        message: error.response?.data?.message,
-        data: error.response?.data,
-        url: error.config?.url
-      });
+      console.error('❌ Error completing step:', error);
       
-      // Handle specific error cases
       if (error.response?.status === 400) {
-        const errorDetails = error.response?.data;
-        console.log('🔍 [FRONTEND] 400 Error details:', errorDetails);
-        
-        if (errorDetails?.message?.includes('already completed')) {
-          showNotification('This step is already completed.', 'warning');
-          // Update local state to reflect reality
-          const updatedTreatmentPlan = treatmentPlan.map(step => {
-            if (step.stepNumber === stepNumber) {
-              return {
-                ...step,
-                status: 'completed' as const,
-                completedAt: new Date(),
-                approval_requested: true
-              };
-            }
-            return step;
-          });
-          setTreatmentPlan(updatedTreatmentPlan);
-        } else if (errorDetails?.message?.includes('invalid step')) {
-          showNotification('Invalid step number or step not found.', 'warning');
+        const errorMsg = error.response?.data?.message || '';
+        if (errorMsg.includes('not in progress')) {
+          showNotification('This step must be activated before completing.', 'warning');
+          // Refresh data to get true state
+          fetchRecordData();
         } else {
-          showNotification('Invalid request. Please check step details.', 'warning');
+          showNotification(errorMsg || 'Cannot complete step.', 'warning');
         }
-      } 
-      else if (error.response?.status === 401) {
-        showNotification('Session expired. Please login again.', 'danger');
-        return;
-      }
-      else if (error.response?.status === 404) {
-        const errorMsg = error.response?.data?.message || 'Resource not found';
-        console.log('🔍 [FRONTEND] 404 Error details:', errorMsg);
-        showNotification(`Not found: ${errorMsg}`, 'warning');
-      }
-      else if (error.response?.status === 500) {
-        showNotification('Server error. Please try again later.', 'danger');
-      }
-      else if (error.code === 'NETWORK_ERROR' || error.message?.includes('Network Error')) {
-        showNotification('Network error. Please check your connection.', 'danger');
-      }
-      else {
-        // Generic error or network issue - use fallback
-        console.log('🔄 [FRONTEND] Using local state update as fallback');
-        const updatedTreatmentPlan = treatmentPlan.map(step => {
-          if (step.stepNumber === stepNumber) {
-            return {
-              ...step,
-              status: 'completed' as const,
-              completedAt: new Date(),
-              patient_message: "I have completed this step",
-              approval_requested: true
-            };
-          }
-          return step;
-        });
-
-        setTreatmentPlan(updatedTreatmentPlan);
-        showNotification(`✅ Step ${stepNumber} completed (local update)!`, 'success');
+      } else {
+         showNotification('Failed to complete step. Please check connection.', 'danger');
       }
     } finally {
       setLoading(false);
@@ -681,13 +518,14 @@ const sendMessage = async () => {
     }
   };
 
-  // THÊM HÀM handleSendApprovalRequest BỊ THIẾU
   const handleSendApprovalRequest = async () => {
     if (!currentStep) return;
     
     setLoading(true);
     try {
       const token = await AsyncStorage.getItem('authToken');
+      
+      // Use the corrected route: /steps/:stepNumber/request-approval
       const response = await axios.post(
         `${API_BASE_URL}/medical-records/${record._id}/steps/${currentStep.stepNumber}/request-approval`,
         { 
@@ -700,32 +538,22 @@ const sendMessage = async () => {
       );
 
       if (response.data.success) {
-        setRecord(response.data.data.record);
-        setTreatmentPlan(response.data.data.record.treatment_plan);
+        // Backend now returns updated record in data.record if we updated the controller
+        // If not, we might need to refetch, but let's assume controller returns relevant data
+        if (response.data.data.record) {
+             setRecord(response.data.data.record);
+             setTreatmentPlan(response.data.data.record.treatment_plan);
+        } else {
+             // Fallback refresh
+             fetchRecordData();
+        }
         showNotification('✅ Approval request sent to doctor!', 'success');
         hideRequestModal();
       }
       
     } catch (error: any) {
-      console.error('Error sending approval request via backend:', error);
-      
-      // Fallback
-      console.log('🔄 Using local state update for approval request');
-      const updatedTreatmentPlan = treatmentPlan.map(step => {
-        if (step.stepNumber === currentStep.stepNumber) {
-          return {
-            ...step,
-            approval_requested: true,
-            approval_requested_at: new Date(),
-            patient_message: requestMessage
-          };
-        }
-        return step;
-      });
-      
-      setTreatmentPlan(updatedTreatmentPlan);
-      showNotification('✅ Approval request sent to doctor!', 'success');
-      hideRequestModal();
+      console.error('Error sending approval request:', error);
+      showNotification('Failed to send request.', 'danger');
     } finally {
       setLoading(false);
       setCurrentStep(null);
@@ -762,6 +590,13 @@ const sendMessage = async () => {
         gradient: ['#66BB6A', '#4CAF50'],
         text: 'Approved',
         bgColor: '#E8F5E8'
+      },
+      rejected: {
+        icon: 'alert-circle-outline' as const,
+        color: '#F44336',
+        gradient: ['#EF5350', '#C62828'],
+        text: 'Rejected',
+        bgColor: '#FFEBEE'
       }
     };
     return configs[status as keyof typeof configs] || configs.pending;
@@ -847,11 +682,10 @@ const sendMessage = async () => {
       );
     }
 
-    // LOGIC CHO PATIENT - ĐƠN GIẢN HÓA
     if (userRole === 'patient') {
       return (
         <View style={styles.processActions}>
-          {/* Chỉ hiển thị nút Mark Complete cho step đang active */}
+          {/* Action: Mark Complete */}
           {step.status === 'in-progress' && (
             <Pressable
               style={styles.actionButton}
@@ -865,7 +699,21 @@ const sendMessage = async () => {
             </Pressable>
           )}
 
-          {/* Hiển thị trạng thái cho các step khác */}
+          {/* Action: Request Approval (if completed but not requested) */}
+          {step.status === 'completed' && !step.approval_requested && (
+             <Pressable
+              style={styles.requestApprovalButton}
+              onPress={() => openRequestModal(step)}
+              disabled={loading}
+            >
+              <LinearGradient colors={['#FF9800', '#F57C00']} style={styles.actionButtonGradient}>
+                <Ionicons name="notifications-outline" size={18} color="#fff" />
+                <Text style={styles.actionButtonText}>Request Approval</Text>
+              </LinearGradient>
+            </Pressable>
+          )}
+
+          {/* Status Display: Awaiting Approval */}
           {step.status === 'completed' && step.approval_requested && (
             <View style={styles.pendingApprovalContainer}>
               <LinearGradient colors={['#FFF3E0', '#FFE0B2']} style={styles.pendingApprovalBadge}>
@@ -875,6 +723,7 @@ const sendMessage = async () => {
             </View>
           )}
 
+          {/* Status Display: Approved */}
           {step.status === 'approved' && (
             <View style={styles.completedContainer}>
               <LinearGradient colors={['#E8F5E8', '#C8E6C9']} style={styles.completedBadge}>
@@ -883,7 +732,18 @@ const sendMessage = async () => {
               </LinearGradient>
             </View>
           )}
+          
+           {/* Status Display: Rejected */}
+          {step.status === 'rejected' && (
+            <View style={styles.completedContainer}>
+              <LinearGradient colors={['#FFEBEE', '#FFCDD2']} style={styles.completedBadge}>
+                <Ionicons name="alert-circle" size={18} color="#D32F2F" />
+                <Text style={[styles.completedText, {color: '#D32F2F'}]}>Rejected - See notes</Text>
+              </LinearGradient>
+            </View>
+          )}
 
+          {/* Status Display: Pending */}
           {step.status === 'pending' && (
             <View style={styles.pendingContainer}>
               <LinearGradient colors={['#F5F5F5', '#E0E0E0']} style={styles.pendingBadge}>
@@ -1158,7 +1018,7 @@ const sendMessage = async () => {
                 {/* Step Header */}
                 <View style={styles.processHeader}>
                   <LinearGradient
-                    colors={[...statusConfig.gradient]}
+                    colors={statusConfig.gradient as [string, string]}
                     style={styles.processNumber}
                   >
                     <Text style={styles.processNumberText}>{step.stepNumber}</Text>
@@ -1207,6 +1067,17 @@ const sendMessage = async () => {
                       <Text style={styles.notesLabel}>Instructions</Text>
                     </View>
                     <Text style={styles.notesText}>{step.instructions}</Text>
+                  </View>
+                )}
+                
+                 {/* Doctor's Notes (if rejected or commented) */}
+                {step.doctorNotes && (
+                   <View style={[styles.notesContainer, {borderLeftColor: '#F44336'}]}>
+                    <View style={styles.notesHeader}>
+                      <Ionicons name="alert-circle-outline" size={16} color="#F44336" />
+                      <Text style={[styles.notesLabel, {color: '#F44336'}]}>Doctor's Feedback</Text>
+                    </View>
+                    <Text style={styles.notesText}>{step.doctorNotes}</Text>
                   </View>
                 )}
 

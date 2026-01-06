@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, memo } from 'react';
+import React, { useEffect, useMemo, useState, useCallback, memo } from 'react';
 import {
   View,
   Text,
@@ -277,46 +277,88 @@ const ProfileHeader = memo(({
   </View>
 ));
 
-// Enhanced Profile Card
+// Utility function to build avatar URL with cache busting
+const buildImageUrl = (filename: string | null): string => {
+  if (!filename) return '';
+  
+  // If already a full URL
+  if (filename.startsWith('http')) {
+    return `${filename}?t=${Date.now()}`;
+  }
+  
+  // If just a filename
+  const timestamp = Date.now();
+  return `${API_BASE_URL}/uploads/avatars/${filename}?t=${timestamp}`;
+};
+
+// Profile Card Component
 const ProfileCard = memo(({ 
   avatar, 
   name, 
   email,
   isEditing, 
   onPickImage,
+  avatarUpdated,
 }: { 
   avatar: string | null; 
   name: string;
   email: string;
   isEditing: boolean;
   onPickImage: () => void;
-}) => (
-  <View style={styles.profileCard}>
-    <LinearGradient
-      colors={['#4A90E2', '#63A4FF']}
-      style={styles.profileCardGradient}
-    >
-      <View style={styles.profileCardContent}>
-        <TouchableOpacity 
-          onPress={isEditing ? onPickImage : undefined} 
-          activeOpacity={isEditing ? 0.8 : 1}
-          style={styles.avatarContainer}
-        >
-          <View style={styles.avatarWrapper}>
-            {avatar ? (
-              <Image source={{ uri: avatar }} style={styles.avatarImage} />
-            ) : (
-              <View style={styles.avatarPlaceholder}>
-                <Text style={styles.avatarInitial}>{name?.charAt(0)?.toUpperCase() || 'P'}</Text>
-              </View>
-            )}
-            {isEditing && (
-              <View style={styles.editBadge}>
-                <Ionicons name="camera" size={moderateScale(14)} color="#4A90E2" />
-              </View>
-            )}
-          </View>
-        </TouchableOpacity>
+  avatarUpdated: boolean;
+}) => {
+  const [imageKey, setImageKey] = useState(Date.now());
+  
+  // Force re-render when avatarUpdated changes
+  useEffect(() => {
+    setImageKey(Date.now());
+  }, [avatarUpdated]);
+  
+  // Build avatar URL with cache busting
+  const avatarUrl = useMemo(() => {
+    return buildImageUrl(avatar);
+  }, [avatar, avatarUpdated]);
+  
+  return (
+    <View style={styles.profileCard}>
+      <LinearGradient
+        colors={['#4A90E2', '#63A4FF']}
+        style={styles.profileCardGradient}
+      >
+        <View style={styles.profileCardContent}>
+          <TouchableOpacity 
+            onPress={isEditing ? onPickImage : undefined} 
+            activeOpacity={isEditing ? 0.8 : 1}
+            style={styles.avatarContainer}
+          >
+            <View style={styles.avatarWrapper}>
+              {avatar ? (
+                <Image 
+                  source={{ 
+                    uri: avatarUrl,
+                    cache: 'reload'
+                  }} 
+                  style={styles.avatarImage}
+                  key={`avatar-${imageKey}`} // Force re-render with new key
+                  onError={(e) => {
+                    console.error('❌ Failed to load avatar:', e.nativeEvent.error);
+                  }}
+                  onLoad={() => {
+                    console.log('✅ Avatar loaded successfully');
+                  }}
+                />
+              ) : (
+                <View style={styles.avatarPlaceholder}>
+                  <Text style={styles.avatarInitial}>{name?.charAt(0)?.toUpperCase() || 'P'}</Text>
+                </View>
+              )}
+              {isEditing && (
+                <View style={styles.editBadge}>
+                  <Ionicons name="camera" size={moderateScale(14)} color="#4A90E2" />
+                </View>
+              )}
+            </View>
+          </TouchableOpacity>
         
         <View style={styles.profileInfo}>
           <Text style={styles.profileName}>{name || 'Patient'}</Text>
@@ -329,7 +371,8 @@ const ProfileCard = memo(({
       </View>
     </LinearGradient>
   </View>
-));
+  );
+});
 
 // Section Header Component
 const SectionHeader = memo(({
@@ -1038,39 +1081,13 @@ const ProfileScreen: React.FC = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedProfile, setEditedProfile] = useState<UserProfile | null>(null);
   const [avatar, setAvatar] = useState<string | null>(null);
+  const [avatarUpdated, setAvatarUpdated] = useState(false);
   const [saving, setSaving] = useState(false);
   
   const fadeAnim = useState(new Animated.Value(0))[0];
   const slideAnim = useState(new Animated.Value(30))[0];
 
-  const pickImage = useCallback(async () => {
-    try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert(
-          'Permission Required',
-          'We need access to your photo library to update your profile picture.',
-          [{ text: 'OK' }]
-        );
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      });
-
-      if (!result.canceled) {
-        setAvatar(result.assets[0].uri);
-        // Here you would typically upload the image to your server
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Failed to pick image. Please try again.');
-    }
-  }, []);
-
+  // Fetch profile data
   const fetchProfile = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -1082,26 +1099,30 @@ const ProfileScreen: React.FC = () => {
       }
 
       // Fetch user profile
-      const profileResponse = await fetch(`${API_BASE_URL}/api/patient/profile`, {
+      const response = await fetch(`${API_BASE_URL}/api/patient/profile`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
       });
       
-      if (!profileResponse.ok) {
-        const errorData = await profileResponse.json();
-        setError(errorData.message || 'Failed to load your profile');
-        return;
+      if (!response.ok) {
+        throw new Error(`Failed to fetch profile: ${response.status}`);
       }
       
-      const profileData = await profileResponse.json();
-      setProfile(profileData.data);
-      setEditedProfile(profileData.data);
-      if (profileData.data.avatar) {
-        setAvatar(profileData.data.avatar);
+      const profileData = await response.json();
+      const userProfile = profileData.data;
+      
+      // Set avatar from profile data
+      if (userProfile.avatar) {
+        setAvatar(userProfile.avatar);
       }
-
+      
+      // QUAN TRỌNG: Đảm bảo cả profile và editedProfile được cập nhật
+      setProfile(userProfile);
+      setEditedProfile(userProfile);
+      setIsEditing(false); // Đảm bảo tắt chế độ chỉnh sửa khi fetch
+      
       // Fetch patient info
       const patientInfoResponse = await fetch(`${API_BASE_URL}/api/patient/patient-info`, {
         headers: {
@@ -1115,6 +1136,7 @@ const ProfileScreen: React.FC = () => {
         setPatientInfo(patientInfoData.data);
       }
       
+      // Animation
       Animated.parallel([
         Animated.timing(fadeAnim, {
           toValue: 1,
@@ -1129,12 +1151,213 @@ const ProfileScreen: React.FC = () => {
         })
       ]).start();
     } catch (err) {
-      setError('Unable to connect. Please check your internet connection.');
       console.error('Fetch profile error:', err);
+      setError('Unable to connect. Please check your internet connection.');
     } finally {
       setLoading(false);
     }
   }, [fadeAnim, slideAnim]);
+
+  // Function to delete old avatar
+  const deleteOldAvatar = useCallback(async () => {
+    try {
+      const token = await AsyncStorage.getItem('authToken');
+      if (!token) return;
+
+      // Call API to delete avatar
+      const response = await fetch(`${API_BASE_URL}/api/patient/avatar`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        console.log('⚠️ No old avatar to delete or delete failed');
+      }
+    } catch (error) {
+      console.error('❌ Error deleting old avatar:', error);
+    }
+  }, []);
+
+  // Function to upload avatar to server
+  const uploadAvatarToServer = useCallback(async (imageUri: string) => {
+    try {
+      const token = await AsyncStorage.getItem('authToken');
+      if (!token) {
+        Alert.alert('Error', 'Please login again');
+        return null;
+      }
+
+      // Delete old avatar before uploading new one
+      await deleteOldAvatar();
+
+      // Create FormData
+      const formData = new FormData();
+      
+      // Create filename with timestamp
+      const timestamp = Date.now();
+      const extension = imageUri.split('.').pop() || 'jpg';
+      const filename = `avatar_${timestamp}.${extension}`;
+      
+      formData.append('avatar', {
+        uri: imageUri,
+        type: 'image/jpeg',
+        name: filename,
+      });
+
+      console.log('📤 Uploading avatar with filename:', filename);
+
+      // Upload to server
+      const response = await fetch(`${API_BASE_URL}/api/patient/upload-avatar`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      const responseText = await response.text();
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('❌ Error parsing response:', parseError);
+        throw new Error('Invalid response from server');
+      }
+      
+      if (!response.ok) {
+        throw new Error(data.message || `Upload failed with status ${response.status}`);
+      }
+
+      console.log('✅ Upload successful:', data);
+      return data;
+    } catch (error: any) {
+      console.error('❌ Upload error:', error);
+      throw error;
+    }
+  }, [deleteOldAvatar]);
+
+  // Function to refresh avatar
+  const refreshAvatar = useCallback(async () => {
+    try {
+      const token = await AsyncStorage.getItem('authToken');
+      if (!token) return;
+
+      // Fetch latest avatar info
+      const response = await fetch(`${API_BASE_URL}/api/patient/avatar-url`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.data.avatar) {
+          const newAvatarUrl = buildImageUrl(data.data.avatar);
+          setAvatar(newAvatarUrl);
+          setAvatarUpdated(prev => !prev);
+        }
+      }
+    } catch (error) {
+      console.error('Error refreshing avatar:', error);
+    }
+  }, []);
+
+  // Function to pick image from gallery
+  const pickImage = useCallback(async () => {
+    try {
+      console.log('📸 Starting pickImage function');
+      
+      // Request permissions
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      
+      if (status !== 'granted') {
+        Alert.alert(
+          'Permission Required',
+          'We need access to your photo library to update your profile picture.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+      
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+      
+      if (!result.canceled && result.assets[0]) {
+        const selectedImage = result.assets[0];
+        
+        // Show confirmation dialog
+        Alert.alert(
+          'Update Profile Picture',
+          'Do you want to update your profile picture?',
+          [
+            {
+              text: 'Cancel',
+              style: 'cancel',
+            },
+            {
+              text: 'Update',
+              onPress: async () => {
+                // Show loading
+                Alert.alert(
+                  'Uploading',
+                  'Uploading your new profile picture...',
+                  [],
+                  { cancelable: false }
+                );
+                
+                try {
+                  // Upload image to server
+                  const uploadResult = await uploadAvatarToServer(selectedImage.uri);
+                  
+                  if (uploadResult?.success) {
+                    // Update state immediately with new avatar
+                    const newAvatarUrl = `${API_BASE_URL}/uploads/avatars/${uploadResult.data.avatar}?t=${Date.now()}`;
+                    
+                    // Update all related states
+                    setAvatar(newAvatarUrl);
+                    setProfile(prev => prev ? { 
+                      ...prev, 
+                      avatar: newAvatarUrl 
+                    } : null);
+                    setEditedProfile(prev => prev ? { 
+                      ...prev, 
+                      avatar: newAvatarUrl 
+                    } : null);
+                    
+                    // Force re-render
+                    setAvatarUpdated(prev => !prev);
+                    
+                    // Close loading alert and show success
+                    Alert.alert(
+                      'Success',
+                      'Profile picture updated successfully!',
+                      [{ text: 'OK' }]
+                    );
+                  }
+                } catch (uploadError: any) {
+                  console.error('Upload failed:', uploadError);
+                  Alert.alert(
+                    'Upload Failed',
+                    uploadError.message || 'Failed to upload image. Please try again.',
+                    [{ text: 'OK' }]
+                  );
+                }
+              },
+            },
+          ]
+        );
+      }
+    } catch (error) {
+      console.error('🔥 Error in pickImage:', error);
+      Alert.alert('Error', 'Failed to pick image. Please try again.');
+    }
+  }, [uploadAvatarToServer]);
 
   // Update emergency contact
   const updateEmergencyContact = useCallback(async (contactInfo: EmergencyContact) => {
@@ -1244,7 +1467,10 @@ const ProfileScreen: React.FC = () => {
     }
   }, []);
 
+  // Save profile
   const handleSave = useCallback(async () => {
+    if (saving) return;
+    
     setSaving(true);
     try {
       const token = await AsyncStorage.getItem('authToken');
@@ -1277,12 +1503,36 @@ const ProfileScreen: React.FC = () => {
       }
 
       const data = await response.json();
-      setProfile(data.data);
+      
+      // QUAN TRỌNG: Cập nhật state với dữ liệu mới
+      const updatedProfile = data.data;
+      setProfile(updatedProfile);
+      setEditedProfile(updatedProfile);
+      
+      // Force re-render avatar nếu có thay đổi
+      if (updatedProfile.avatar) {
+        setAvatar(updatedProfile.avatar);
+        setAvatarUpdated(prev => !prev);
+      }
+      
+      // Tắt chế độ chỉnh sửa và reset saving state
       setIsEditing(false);
+      
+      // Hiển thị thông báo thành công
       Alert.alert(
         'Success!',
         'Your profile has been updated successfully.',
-        [{ text: 'OK' }]
+        [
+          { 
+            text: 'OK',
+            onPress: () => {
+              // Refresh lại profile để đảm bảo dữ liệu đồng bộ
+              setTimeout(() => {
+                fetchProfile();
+              }, 100);
+            }
+          }
+        ]
       );
     } catch (err: any) {
       Alert.alert(
@@ -1293,8 +1543,9 @@ const ProfileScreen: React.FC = () => {
     } finally {
       setSaving(false);
     }
-  }, [editedProfile]);
+  }, [editedProfile, saving, fetchProfile]);
 
+  // Logout
   const handleLogout = useCallback(() => {
     Alert.alert(
       'Sign Out',
@@ -1319,23 +1570,42 @@ const ProfileScreen: React.FC = () => {
     );
   }, [navigation]);
 
-  useEffect(() => {
-    fetchProfile();
-  }, [fetchProfile]);
-
-  useEffect(() => {
-    if (!isEditing && profile) {
-      setEditedProfile(profile);
-    }
-  }, [isEditing, profile]);
-
+  // Field change handler
   const handleFieldChange = useCallback((field: keyof UserProfile, value: string) => {
     setEditedProfile(prev => prev ? { ...prev, [field]: value } : null);
   }, []);
 
+  // Effects
+  useEffect(() => {
+    console.log('🔄 ProfileScreen mounted, fetching profile...');
+    fetchProfile();
+  }, [fetchProfile]);
+
+  // Đồng bộ editedProfile khi profile thay đổi
+  useEffect(() => {
+    if (profile) {
+      setEditedProfile(profile);
+      if (profile.avatar) {
+        setAvatar(profile.avatar);
+      }
+    }
+  }, [profile]);
+
+  // Reset editing state khi component unmount
+  useEffect(() => {
+    return () => {
+      setIsEditing(false);
+      setEditedProfile(null);
+      setAvatar(null);
+      setAvatarUpdated(false);
+    };
+  }, []);
+
+  // Render loading/error
   if (loading) return <LoadingSpinner />;
   if (error) return <ErrorView error={error} onRetry={fetchProfile} />;
 
+  // Main render
   return (
     <View style={styles.container}>
       <ProfileHeader 
@@ -1364,6 +1634,7 @@ const ProfileScreen: React.FC = () => {
             email={profile?.email || ''}
             isEditing={isEditing}
             onPickImage={pickImage}
+            avatarUpdated={avatarUpdated}
           />
 
           {/* Action Buttons */}
@@ -1389,7 +1660,10 @@ const ProfileScreen: React.FC = () => {
                   onPress={() => {
                     setIsEditing(false);
                     setEditedProfile(profile);
-                    setAvatar(profile?.avatar || null);
+                    if (profile?.avatar) {
+                      setAvatar(profile.avatar);
+                    }
+                    setAvatarUpdated(prev => !prev);
                   }}
                   activeOpacity={0.8}
                 >
