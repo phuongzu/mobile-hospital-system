@@ -25,6 +25,8 @@ import MedicationSearchScreen from './screens/MedicationSearchScreen';
 import TermExplanationScreen from './screens/TermExplanationScreen';
 import LifestyleAdviceScreen from './screens/LifestyleAdviceScreen';
 
+import { io } from 'socket.io-client';
+
 
 LogBox.ignoreLogs([
   'Non-serializable values were found in the navigation state',
@@ -58,6 +60,24 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 const navigationRef = React.createRef<NavigationContainerRef<RootStackParamList>>();
 
 const App = () => {
+  // Socket.io client for real-time communication
+  const [socket] = useState(() => io('http://localhost:3000', { transports: ['websocket'] }));
+
+  useEffect(() => {
+    if (!socket) return;
+    socket.on('chat:receive', (data) => {
+      console.log('Received chat message:', data);
+      // TODO: update chat UI state here
+    });
+    socket.on('notification:receive', (data) => {
+      console.log('Received notification:', data);
+      // TODO: update notification UI state here
+    });
+    return () => {
+      socket.off('chat:receive');
+      socket.off('notification:receive');
+    };
+  }, [socket]);
   const [appState, setAppState] = useState<{
     ready: boolean;
     showOnboarding: boolean;
