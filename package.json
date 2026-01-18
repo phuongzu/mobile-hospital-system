@@ -17,6 +17,7 @@
     "@react-navigation/native-stack": "^7.3.21",
     "@react-navigation/stack": "^7.4.2",
     "axios": "^1.10.0",
+    "date-fns": "^4.1.0",
     "datetimepicker": "^0.1.39",
     "expo": "~53.0.13",
     "expo-blur": "^15.0.7",

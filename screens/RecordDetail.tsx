@@ -50,7 +50,7 @@ interface TreatmentStep {
   dosage?: string;
   duration?: string;
   instructions?: string;
-  status: 'pending' | 'in-progress' | 'completed' | 'approved' | 'rejected';
+  status: 'pending' | 'in-progress' | 'scheduled' | 'completed' | 'approved' | 'rejected';
   completedAt?: Date;
   patient_message?: string;
   doctorNotes?: string;
@@ -59,6 +59,12 @@ interface TreatmentStep {
   condition_description?: string;
   rejectionReason?: string;
   rejectedAt?: Date;
+  isPhysicalVisit?: boolean;
+  reExaminationScheduled?: boolean;
+  reExaminationDate?: Date;
+  reExaminationAppointmentId?: string;
+  arrivalConfirmed?: boolean;
+  arrivalConfirmedAt?: Date;
   _id?: string;
 }
 
@@ -143,6 +149,10 @@ const RecordDetail: React.FC = () => {
   const [conditionDescription, setConditionDescription] = useState('');
   const [patientMessage, setPatientMessage] = useState('');
   
+  // Confirm arrival modal
+  const [showConfirmArrivalModal, setShowConfirmArrivalModal] = useState(false);
+  const [arrivalStep, setArrivalStep] = useState<TreatmentStep | null>(null);
+  
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
@@ -150,6 +160,7 @@ const RecordDetail: React.FC = () => {
   const completeModalAnim = useRef(new Animated.Value(screenHeight)).current;
   const requestModalAnim = useRef(new Animated.Value(screenHeight)).current;
   const chatModalAnim = useRef(new Animated.Value(screenHeight)).current;
+  const confirmArrivalAnim = useRef(new Animated.Value(screenHeight)).current;
   
   // Refs
   const flatListRef = useRef<FlatList>(null);
@@ -280,6 +291,30 @@ const RecordDetail: React.FC = () => {
     });
   };
 
+  const openConfirmArrivalModal = (step: TreatmentStep) => {
+    setArrivalStep(step);
+    setShowConfirmArrivalModal(true);
+    
+    Animated.spring(confirmArrivalAnim, {
+      toValue: 0,
+      tension: 100,
+      friction: 8,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const closeConfirmArrivalModal = () => {
+    Animated.timing(confirmArrivalAnim, {
+      toValue: screenHeight,
+      duration: 300,
+      useNativeDriver: true,
+    }).start(() => {
+      setShowConfirmArrivalModal(false);
+      setArrivalStep(null);
+      confirmArrivalAnim.setValue(screenHeight);
+    });
+  };
+
   const openChatModal = () => {
     setShowChatModal(true);
     loadMessages();
@@ -377,6 +412,34 @@ const RecordDetail: React.FC = () => {
       showNotification('Step completed (demo mode)', 'success');
       closeCompleteModal();
       
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleConfirmArrival = async () => {
+    if (!arrivalStep) return;
+    
+    setLoading(true);
+    try {
+      const token = await AsyncStorage.getItem('authToken');
+      
+      const response = await axios.post(
+        `${API_BASE_URL}/patients/consultations/${record._id}/steps/${arrivalStep.stepNumber}/confirm-arrival`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      if (response.data.success) {
+        showNotification('Arrival confirmed. Doctor has been notified.', 'success');
+        closeConfirmArrivalModal();
+        fetchRecordData();
+      } else {
+        showNotification(response.data.message || 'Failed to confirm arrival', 'danger');
+      }
+    } catch (error: any) {
+      console.error('Error confirming arrival:', error);
+      showNotification('Error confirming arrival', 'danger');
     } finally {
       setLoading(false);
     }
@@ -537,6 +600,13 @@ const RecordDetail: React.FC = () => {
         color: '#2196F3',
         gradient: ['#42A5F5', '#2196F3'],
         text: 'In Progress',
+        bgColor: '#E3F2FD'
+      },
+      scheduled: {
+        icon: 'calendar-outline' as const,
+        color: '#2196F3',
+        gradient: ['#42A5F5', '#2196F3'],
+        text: 'Scheduled',
         bgColor: '#E3F2FD'
       },
       completed: {
@@ -940,6 +1010,8 @@ const RecordDetail: React.FC = () => {
 
           {treatmentPlan.map((step) => {
             const statusConfig = getStatusConfig(step.status);
+            const isPhysicalVisit = step.isPhysicalVisit;
+            const isScheduledReExamination = step.reExaminationScheduled;
             
             return (
               <View
@@ -954,6 +1026,54 @@ const RecordDetail: React.FC = () => {
                   <View style={styles.stepInfo}>
                     <Text style={styles.stepTitle}>{step.title}</Text>
                     <Text style={styles.stepDescription}>{step.description}</Text>
+                    
+                    {/* Physical Visit Badge */}
+                    {isPhysicalVisit && (
+                      <View style={styles.physicalVisitBadge}>
+                        <Ionicons name="medical" size={12} color="#D32F2F" />
+                        <Text style={styles.physicalVisitText}>Physical Re-Examination Required</Text>
+                      </View>
+                    )}
+                    
+                    {/* Scheduled Appointment Info */}
+                    {isScheduledReExamination && step.reExaminationDate && (
+                      <View style={styles.scheduledAppointmentContainer}>
+                        <View style={styles.appointmentDateTimeContainer}>
+                          <Ionicons name="calendar" size={16} color="#1976D2" />
+                          <Text style={styles.appointmentDateTime}>
+                            Scheduled for: {new Date(step.reExaminationDate).toLocaleDateString()} at {' '}
+                            {new Date(step.reExaminationDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </Text>
+                        </View>
+                        
+                        {/* Confirm Arrival Button (only show on appointment day) */}
+                        {step.status === 'scheduled' && 
+                         !step.arrivalConfirmed && 
+                         new Date(step.reExaminationDate!).toDateString() === new Date().toDateString() && (
+                          <Pressable
+                            style={styles.confirmArrivalButton}
+                            onPress={() => openConfirmArrivalModal(step)}
+                          >
+                            <LinearGradient colors={['#4CAF50', '#388E3C']} style={styles.confirmArrivalGradient}>
+                              <Ionicons name="checkmark-circle" size={18} color="#fff" />
+                              <Text style={styles.confirmArrivalText}>Confirm Arrival at Clinic</Text>
+                            </LinearGradient>
+                          </Pressable>
+                        )}
+                        
+                        {/* Already Confirmed Status */}
+                        {step.arrivalConfirmed && (
+                          <View style={styles.arrivalConfirmedContainer}>
+                            <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
+                            <Text style={styles.arrivalConfirmedText}>
+                              Arrival confirmed at {step.arrivalConfirmedAt ? 
+                              new Date(step.arrivalConfirmedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 
+                              'N/A'}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    )}
                     
                     {/* Medication Info */}
                     {(step.medication || step.dosage || step.duration) && (
@@ -1214,6 +1334,96 @@ const RecordDetail: React.FC = () => {
                     <ActivityIndicator color="#fff" size="small" />
                   ) : (
                     <Text style={styles.primaryButtonText}>Send Request</Text>
+                  )}
+                </Pressable>
+              </View>
+            </View>
+          </Animated.View>
+        </BlurView>
+      </Modal>
+
+      {/* Confirm Arrival Modal */}
+      <Modal
+        visible={showConfirmArrivalModal}
+        transparent
+        animationType="none"
+        statusBarTranslucent
+        onRequestClose={closeConfirmArrivalModal}
+      >
+        <BlurView intensity={20} style={styles.modalOverlay}>
+          <Animated.View 
+            style={[
+              styles.modalContainer,
+              { transform: [{ translateY: confirmArrivalAnim }] }
+            ]}
+          >
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <View style={styles.modalTitleContainer}>
+                  <View style={styles.modalIcon}>
+                    <Ionicons name="checkmark-circle" size={20} color="#4CAF50" />
+                  </View>
+                  <View>
+                    <Text style={styles.modalTitle}>Confirm Clinic Arrival</Text>
+                    <Text style={styles.modalSubtitle}>Step {arrivalStep?.stepNumber}: {arrivalStep?.title}</Text>
+                  </View>
+                </View>
+                <TouchableOpacity style={styles.modalCloseButton} onPress={closeConfirmArrivalModal}>
+                  <Ionicons name="close" size={20} color="#666" />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.modalSection}>
+                <Text style={styles.modalSectionLabel}>Appointment Details:</Text>
+                <Text style={styles.modalSectionText}>
+                  {arrivalStep?.reExaminationDate && (
+                    <>
+                      {new Date(arrivalStep.reExaminationDate).toLocaleDateString('en-US', { 
+                        weekday: 'long', 
+                        year: 'numeric', 
+                        month: 'long', 
+                        day: 'numeric' 
+                      })}
+                      {' at '}
+                      {new Date(arrivalStep.reExaminationDate).toLocaleTimeString([], { 
+                        hour: '2-digit', 
+                        minute: '2-digit' 
+                      })}
+                    </>
+                  )}
+                </Text>
+              </View>
+
+              <View style={styles.modalSection}>
+                <Text style={styles.inputLabel}>
+                  <Ionicons name="information-circle" size={16} color="#2196F3" />
+                  {' '}Important Notice
+                </Text>
+                <Text style={styles.inputHint}>
+                  By confirming your arrival, you acknowledge that you are physically present at the clinic for your scheduled re-examination. The doctor will be notified and will begin your physical assessment shortly.
+                </Text>
+              </View>
+
+              <View style={styles.modalActions}>
+                <Pressable
+                  style={styles.secondaryButton}
+                  onPress={closeConfirmArrivalModal}
+                >
+                  <Text style={styles.secondaryButtonText}>Cancel</Text>
+                </Pressable>
+                
+                <Pressable
+                  style={styles.primaryButton}
+                  onPress={handleConfirmArrival}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <>
+                      <Ionicons name="checkmark-circle" size={18} color="#fff" />
+                      <Text style={styles.primaryButtonText}>Confirm Arrival</Text>
+                    </>
                   )}
                 </Pressable>
               </View>
@@ -1651,6 +1861,70 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: 8,
   },
+  physicalVisitBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFEBEE',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    marginBottom: 8,
+  },
+  physicalVisitText: {
+    fontSize: 11,
+    color: '#D32F2F',
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  scheduledAppointmentContainer: {
+    backgroundColor: '#E3F2FD',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#BBDEFB'
+  },
+  appointmentDateTimeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8
+  },
+  appointmentDateTime: {
+    marginLeft: 8,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1976D2'
+  },
+  confirmArrivalButton: {
+    borderRadius: 8,
+    overflow: 'hidden',
+    marginTop: 8
+  },
+  confirmArrivalGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16
+  },
+  confirmArrivalText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 8
+  },
+  arrivalConfirmedContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8
+  },
+  arrivalConfirmedText: {
+    marginLeft: 8,
+    fontSize: 14,
+    color: '#4CAF50',
+    fontWeight: '600'
+  },
   medicationInfo: {
     marginTop: 8,
   },
@@ -1925,6 +2199,7 @@ const styles = StyleSheet.create({
     color: '#666',
     marginBottom: 8,
     fontStyle: 'italic',
+    lineHeight: 18,
   },
   textArea: {
     backgroundColor: '#F8F9FA',
@@ -1958,6 +2233,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     borderRadius: 8,
     backgroundColor: '#1976D2',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   primaryButtonDisabled: {
     opacity: 0.6,

@@ -52,7 +52,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
   const { doctor } = route.params as { doctor: Doctor };
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1); // Ngày mai
-  const [selectedDate, setSelectedDate] = useState(tomorrow); // Khởi tạo với ngày mai
+  const [selectedDate, setSelectedDate] = useState(tomorrow);
   const [selectedTime, setSelectedTime] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [symptoms, setSymptoms] = useState('');
@@ -96,44 +96,90 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
     ]).start();
   };
 
-  const fetchAvailableSlots = async () => {
-    setLoadingSlots(true);
-    try {
-      const token = await AsyncStorage.getItem('authToken');
-      const formattedDate = selectedDate.toISOString().split('T')[0];
-      
-      const response = await fetch(
-        `${API_BASE_URL}/api/patient/appointments/availability?doctor_id=${doctor._id}&date=${formattedDate}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        const slots = timeSlots.map(time => {
-          const slotData = data.availableSlots?.find((slot: any) => slot.time === time);
-          return {
-            time,
-            isAvailable: slotData ? slotData.isAvailable : false,
-            isReserved: slotData ? slotData.isReserved : false,
-            reservedBy: slotData?.reservedBy
-          };
-        });
-        setAvailableSlots(slots);
-      } else {
-        simulateAvailableSlots();
+const fetchAvailableSlots = async () => {
+  setLoadingSlots(true);
+  try {
+    const token = await AsyncStorage.getItem('authToken');
+    const formattedDate = selectedDate.toISOString().split('T')[0];
+    
+    const response = await fetch(
+      `${API_BASE_URL}/api/patient/appointments/availability?doctor_id=${doctor._id}&date=${formattedDate}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
       }
-    } catch (error) {
-      console.error('Error fetching slots:', error);
+    );
+
+    if (response.ok) {
+      const data = await response.json();
+      
+      // FIX: Hiển thị thông tin chi tiết về slot bị booked
+      const slots = timeSlots.map(time => {
+        const slotData = data.availableSlots?.find((slot: any) => slot.time === time);
+        const isBooked = slotData && !slotData.isAvailable;
+        const bookedInfo = slotData?.bookedInfo;
+        
+        return {
+          time,
+          isAvailable: slotData ? slotData.isAvailable : false,
+          isReserved: slotData ? slotData.isReserved : false,
+          isBooked: isBooked,
+          bookedInfo: bookedInfo || null,
+          // Hiển thị thông tin nếu bị booked
+          bookingStatus: isBooked ? `Booked by patient (${bookedInfo?.status || 'pending'})` : 'Available'
+        };
+      });
+      
+      setAvailableSlots(slots);
+      
+      // Cảnh báo nếu không còn slot nào
+      if (data.summary?.isFullyBooked) {
+        Alert.alert(
+          'Fully Booked',
+          `No available time slots for ${selectedDate.toDateString()}. Please select another date.`
+        );
+      }
+    } else {
+      // Fallback logic
       simulateAvailableSlots();
-    } finally {
-      setLoadingSlots(false);
-      setRefreshing(false);
     }
-  };
+  } catch (error) {
+    console.error('Error fetching slots:', error);
+    simulateAvailableSlots();
+  } finally {
+    setLoadingSlots(false);
+    setRefreshing(false);
+  }
+};
+
+// Thêm hàm để kiểm tra trùng lịch khi submit
+const validateTimeSlot = (slot: any) => {
+  if (slot.isBooked) {
+    Alert.alert(
+      'Slot Already Booked',
+      `This time slot (${slot.time}) is already booked. Please choose another time.`,
+      [
+        { text: 'OK' },
+        { 
+          text: 'View Alternative Slots', 
+          onPress: () => {
+            // Hiển thị các slot còn trống
+            const available = availableSlots.filter(s => s.isAvailable);
+            if (available.length > 0) {
+              Alert.alert(
+                'Available Slots',
+                `Available times: ${available.map(s => s.time).join(', ')}`
+              );
+            }
+          }
+        }
+      ]
+    );
+    return false;
+  }
+  return true;
+};
 
   const simulateAvailableSlots = () => {
     const available = timeSlots.map((time, index) => ({
@@ -226,6 +272,9 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
   };
 
   const showConfirmation = () => {
+    const selectedSlot = availableSlots.find(slot => slot.time === selectedTime);
+      if (!selectedSlot) return;
+
     if (!validateBooking()) return;
 
     Alert.alert(
@@ -421,10 +470,6 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
         <View style={styles.sectionHeader}>
           <Ionicons name="time-outline" size={20} color="#1976d2" />
           <Text style={styles.sectionTitle}>Select Date & Time</Text>
-          <TouchableOpacity onPress={onRefresh} style={styles.refreshButton}>
-            <Ionicons name="refresh" size={16} color="#1976d2" />
-            <Text style={styles.refreshText}>Refresh</Text>
-          </TouchableOpacity>
         </View>
         
         <TouchableOpacity 
