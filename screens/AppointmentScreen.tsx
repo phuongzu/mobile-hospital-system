@@ -51,7 +51,7 @@ const API_BASE_URL = 'http://localhost:3000';
 const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
   const { doctor } = route.params as { doctor: Doctor };
   const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1); // Ngày mai
+  tomorrow.setDate(tomorrow.getDate() + 1);
   const [selectedDate, setSelectedDate] = useState(tomorrow);
   const [selectedTime, setSelectedTime] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);

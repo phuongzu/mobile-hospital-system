@@ -15,8 +15,11 @@ import {
   Platform,
   RefreshControl,
   Dimensions,
+  Animated,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/MaterialIcons';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useNavigation } from '@react-navigation/native';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import io, { Socket } from 'socket.io-client';
@@ -46,6 +49,7 @@ const API_BASE_URL = 'http://localhost:3000';
 const API_ENDPOINT = `${API_BASE_URL}/api`;
 
 const MessageScreen = () => {
+  const navigation = useNavigation<any>();
   const flatListRef = useRef<FlatList>(null);
   const socketRef = useRef<Socket | null>(null);
   const selectedConvRef = useRef<Conversation | null>(null);
@@ -62,19 +66,37 @@ const MessageScreen = () => {
   const [isSocketConnected, setIsSocketConnected] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Status pulse animation
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
   useEffect(() => {
     selectedConvRef.current = selectedConversation;
   }, [selectedConversation]);
 
+  useEffect(() => {
+    if (isSocketConnected) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 0.6, duration: 1000, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 1000, useNativeDriver: true }),
+        ])
+      ).start();
+    }
+  }, [isSocketConnected]);
+
   const safeFormatTime = useCallback((dateStr?: string | number | Date): string => {
     if (!dateStr) return '';
     const date = new Date(dateStr);
-    if (isNaN(date.getTime())) return '';
-    try {
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    const oneDay = 24 * 60 * 60 * 1000;
+
+    if (diff < oneDay) {
       return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } catch {
-      return '';
+    } else if (diff < oneDay * 7) {
+      return date.toLocaleDateString([], { weekday: 'short' });
     }
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
   }, []);
 
   const extractMessageText = useCallback((m: any): string => {
@@ -95,7 +117,6 @@ const MessageScreen = () => {
 
   handlerRef.current = (rawMsg: any) => {
     if (!rawMsg) return;
-
     const convId = rawMsg.conversationId || rawMsg.conversation_id;
     const normalizedMsg: Message = { 
       ...rawMsg, 
@@ -105,7 +126,6 @@ const MessageScreen = () => {
     };
     
     const active = selectedConvRef.current;
-
     setConversations(prev => {
       const updated = prev.map(conv => {
         if (conv._id === convId) {
@@ -124,7 +144,6 @@ const MessageScreen = () => {
     if (active?._id === convId) {
       setMessages(prev => {
         if (prev.some(m => m._id === normalizedMsg._id)) return prev;
-        
         const sId = getSenderId(normalizedMsg.sender_id);
         if (sId === currentUserId) {
           const tempIdx = prev.findIndex(m => m._id.startsWith('temp_') && extractMessageText(m) === normalizedMsg.message);
@@ -144,13 +163,11 @@ const MessageScreen = () => {
     try {
       const token = await AsyncStorage.getItem('authToken');
       if (!token || socketRef.current?.connected) return;
-
       socketRef.current = io(API_BASE_URL, {
         auth: { token },
         transports: ['websocket'],
         reconnection: true,
       });
-
       socketRef.current.on('connect', () => setIsSocketConnected(true));
       socketRef.current.on('disconnect', () => setIsSocketConnected(false));
       socketRef.current.on('new_message', (data) => handlerRef.current?.(data));
@@ -238,8 +255,11 @@ const MessageScreen = () => {
 
   useEffect(() => {
     const init = async () => {
-      const userData = await AsyncStorage.getItem('userData');
-      if (userData) setCurrentUserId(JSON.parse(userData)._id);
+      const userDataStr = await AsyncStorage.getItem('userData');
+      if (userDataStr) {
+        const userData = JSON.parse(userDataStr);
+        setCurrentUserId(userData._id);
+      }
       connectSocket();
       loadConversations();
     };
@@ -255,65 +275,122 @@ const MessageScreen = () => {
 
   if (selectedConversation) {
     return (
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView style={styles.chatSafeArea}>
         <StatusBar barStyle="dark-content" />
-        <View style={styles.chatHeader}>
-          <TouchableOpacity onPress={() => setSelectedConversation(null)} style={styles.backButton}>
-            <Icon name="arrow-back-ios" size={20} color="#1E293B" />
+        <View style={styles.messengerHeader}>
+          <TouchableOpacity onPress={() => setSelectedConversation(null)} style={styles.headerActionBtn}>
+            <Ionicons name="chevron-back" size={28} color="#0084FF" />
           </TouchableOpacity>
-          <View style={styles.headerInfo}>
-            <Text style={styles.chatPartnerName}>{selectedConversation.participant.name}</Text>
-            <Text style={[styles.chatPartnerStatus, { color: isSocketConnected ? '#10B981' : '#94A3B8' }]}>
-              {isSocketConnected ? 'LIVE CONNECTION' : 'SYNCING...'}
-            </Text>
+          
+          <TouchableOpacity style={styles.headerPartnerInfo}>
+            <View style={styles.headerAvatarContainer}>
+              <Image source={{ uri: getAvatar(selectedConversation.participant.avatar) }} style={styles.headerAvatar} />
+              <View style={styles.headerStatusDot} />
+            </View>
+            <View>
+              <Text style={styles.headerName} numberOfLines={1}>{selectedConversation.participant.name}</Text>
+              <Text style={styles.headerSubtext}>Active now</Text>
+            </View>
+          </TouchableOpacity>
+
+          <View style={styles.headerRightActions}>
+            <TouchableOpacity style={styles.headerActionBtn}>
+              <Ionicons name="call" size={22} color="#0084FF" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.headerActionBtn}>
+              <Ionicons name="videocam" size={24} color="#0084FF" />
+            </TouchableOpacity>
           </View>
         </View>
 
         <KeyboardAvoidingView 
-          style={styles.chatContainer} 
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+          style={styles.chatKeyboardArea} 
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
         >
           {messageLoading ? (
-            <ActivityIndicator style={{ flex: 1 }} color="#2563EB" />
+            <View style={styles.center}>
+              <ActivityIndicator size="small" color="#0084FF" />
+            </View>
           ) : (
             <FlatList
               ref={flatListRef}
               data={messages}
               keyExtractor={(item, index) => item._id || index.toString()}
-              /* FIX: Tăng paddingBottom lên 180 để tin nhắn cuối không bị che bởi thanh input nổi */
-              contentContainerStyle={{ padding: 16, paddingBottom: 180 }}
+              contentContainerStyle={styles.messageListContent}
               onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-              renderItem={({ item }) => {
+              renderItem={({ item, index }) => {
                 const isMe = getSenderId(item.sender_id) === currentUserId;
+                const nextMsg = messages[index + 1];
+                const isLastInGroup = !nextMsg || getSenderId(nextMsg.sender_id) !== getSenderId(item.sender_id);
+                
                 return (
-                  <View style={[styles.messageWrapper, isMe ? styles.myMsgWrapper : styles.theirMsgWrapper]}>
-                    <View style={[styles.msgBubble, isMe ? styles.myMsgBubble : styles.theirMsgBubble]}>
-                      <Text style={[styles.msgText, isMe ? styles.myMsgText : styles.theirMsgText]}>{extractMessageText(item)}</Text>
+                  <View style={[styles.msgContainer, isMe ? styles.myMsgContainer : styles.theirMsgContainer]}>
+                    <View style={styles.msgBubbleRow}>
+                      {!isMe && isLastInGroup && (
+                        <Image source={{ uri: getAvatar(selectedConversation.participant.avatar) }} style={styles.smallAvatar} />
+                      )}
+                      {!isMe && !isLastInGroup && <View style={styles.smallAvatarPlaceholder} />}
+                      
+                      {isMe ? (
+                        <LinearGradient
+                          colors={['#0084FF', '#00C6FF']}
+                          start={{x: 0, y: 0}} end={{x: 1, y: 1}}
+                          style={[styles.msgBubble, styles.myBubble, !isLastInGroup && { borderBottomRightRadius: 20 }]}
+                        >
+                          <Text style={[styles.msgText, styles.myText]}>{extractMessageText(item)}</Text>
+                        </LinearGradient>
+                      ) : (
+                        <View style={[styles.msgBubble, styles.theirBubble, !isLastInGroup && { borderBottomLeftRadius: 20 }]}>
+                          <Text style={[styles.msgText, styles.theirText]}>{extractMessageText(item)}</Text>
+                        </View>
+                      )}
                     </View>
-                    <View style={styles.msgFooter}>
-                      <Text style={styles.msgTime}>{safeFormatTime(item.timestamp)}</Text>
-                      {isMe && <Icon name="done-all" size={12} color={item.read ? '#3B82F6' : '#CBD5E1'} />}
-                    </View>
+                    {isLastInGroup && isMe && item.read && (
+                       <View style={styles.readIndicator}>
+                          <Image source={{ uri: getAvatar(selectedConversation.participant.avatar) }} style={styles.readAvatar} />
+                       </View>
+                    )}
                   </View>
                 );
               }}
             />
           )}
 
-          <View style={styles.floatingInputBar}>
-            <TextInput 
-              style={styles.textInput} 
-              value={newMessage} 
-              onChangeText={setNewMessage} 
-              placeholder="Type a message..." 
-              multiline 
-              placeholderTextColor="#94A3B8" 
-              onFocus={() => setTimeout(scrollToBottom, 400)}
-            />
-            <TouchableOpacity onPress={sendMessage} disabled={!newMessage.trim() || sending} style={[styles.sendBtn, !newMessage.trim() && { backgroundColor: '#F1F5F9' }]}>
-              {sending ? <ActivityIndicator size="small" color="#FFF" /> : <Icon name="send" size={20} color={newMessage.trim() ? "#FFF" : "#94A3B8"} />}
+          <View style={styles.messengerInputBar}>
+            <TouchableOpacity style={styles.inputActionBtn}>
+              <Ionicons name="add-circle" size={26} color="#0084FF" />
             </TouchableOpacity>
+            <TouchableOpacity style={styles.inputActionBtn}>
+              <Ionicons name="camera" size={26} color="#0084FF" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.inputActionBtn}>
+              <Ionicons name="images" size={24} color="#0084FF" />
+            </TouchableOpacity>
+            
+            <View style={styles.inputWrapper}>
+              <TextInput 
+                style={styles.textInputArea} 
+                value={newMessage} 
+                onChangeText={setNewMessage} 
+                placeholder="Aa" 
+                multiline 
+                placeholderTextColor="#999" 
+              />
+              <TouchableOpacity style={styles.emojiBtn}>
+                <Ionicons name="happy-outline" size={24} color="#0084FF" />
+              </TouchableOpacity>
+            </View>
+
+            {newMessage.trim().length > 0 ? (
+              <TouchableOpacity onPress={sendMessage} style={styles.sendIconBtn}>
+                <Ionicons name="send" size={24} color="#0084FF" />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity style={styles.sendIconBtn}>
+                <Ionicons name="thumbs-up" size={26} color="#0084FF" />
+              </TouchableOpacity>
+            )}
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -322,70 +399,219 @@ const MessageScreen = () => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Chats</Text>
-        <View style={[styles.statusDot, { backgroundColor: isSocketConnected ? '#10B981' : '#F43F5E' }]} />
+      <StatusBar barStyle="dark-content" />
+      <View style={styles.listHeader}>
+        <TouchableOpacity 
+          style={styles.homeBtn}
+          onPress={() => navigation.navigate('Home')}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="home" size={22} color="#0084FF" />
+        </TouchableOpacity>
+        
+        <Text style={styles.listHeaderTitle}>Chats</Text>
+        
+        <TouchableOpacity style={styles.editBtn}>
+          <Ionicons name="create-outline" size={24} color="#000" />
+        </TouchableOpacity>
       </View>
-      <FlatList
-        data={conversations}
-        keyExtractor={(item) => item._id}
-        contentContainerStyle={{ paddingHorizontal: 16 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadConversations(); }} />}
-        renderItem={({ item }) => (
-          <TouchableOpacity onPress={() => { setSelectedConversation(item); loadMessages(item._id); }} style={styles.convCard}>
-            <Image source={{ uri: getAvatar(item.participant.avatar) }} style={styles.convAvatar} />
-            <View style={styles.convContent}>
-              <View style={styles.convHeader}>
-                <Text style={styles.convName}>{item.participant.name}</Text>
-                <Text style={styles.convTime}>{safeFormatTime(item.last_message_at)}</Text>
+
+      <View style={styles.searchBarArea}>
+        <View style={styles.searchInner}>
+          <Ionicons name="search" size={20} color="#8E8E93" />
+          <TextInput placeholder="Search" style={styles.searchInput} placeholderTextColor="#8E8E93" />
+        </View>
+      </View>
+
+      {loading && !refreshing ? (
+        <View style={styles.center}>
+          <ActivityIndicator size="small" color="#0084FF" />
+        </View>
+      ) : (
+        <FlatList
+          data={conversations}
+          keyExtractor={(item) => item._id}
+          contentContainerStyle={styles.conversationList}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadConversations(); }} />}
+          renderItem={({ item }) => (
+            <TouchableOpacity 
+              onPress={() => { setSelectedConversation(item); loadMessages(item._id); }} 
+              style={styles.conversationItem}
+              activeOpacity={0.6}
+            >
+              <View style={styles.itemAvatarContainer}>
+                <Image source={{ uri: getAvatar(item.participant.avatar) }} style={styles.itemAvatar} />
+                <Animated.View style={[styles.activeStatusRing, { opacity: pulseAnim }]} />
               </View>
-              <Text style={[styles.convLastMsg, item.unread_count > 0 && styles.convLastMsgUnread]} numberOfLines={1}>
-                {extractMessageText(item.last_message) || 'Start session...'}
-              </Text>
-            </View>
-            {item.unread_count > 0 && <View style={styles.unreadBadge}><Text style={styles.unreadText}>{item.unread_count}</Text></View>}
-          </TouchableOpacity>
-        )}
-      />
+              
+              <View style={styles.itemContent}>
+                <Text style={[styles.itemName, item.unread_count > 0 && styles.unreadName]}>
+                  {item.participant.name}
+                </Text>
+                <View style={styles.itemLastRow}>
+                  <Text style={[styles.itemLastMsg, item.unread_count > 0 && styles.unreadMsg]} numberOfLines={1}>
+                    {extractMessageText(item.last_message) || 'You sent a wave'}
+                  </Text>
+                  <Text style={styles.itemDot}> • </Text>
+                  <Text style={styles.itemTime}>{safeFormatTime(item.last_message_at)}</Text>
+                </View>
+              </View>
+
+              {item.unread_count > 0 ? (
+                <View style={styles.unreadBlueDot} />
+              ) : (
+                <Ionicons name="checkmark-circle-outline" size={16} color="#DDD" />
+              )}
+            </TouchableOpacity>
+          )}
+        />
+      )}
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#F8FAFC' },
-  header: { padding: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#FFF', borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
-  headerTitle: { fontSize: 28, fontWeight: '900', color: '#0F172A' },
-  statusDot: { width: 12, height: 12, borderRadius: 6 },
-  convCard: { flexDirection: 'row', padding: 16, alignItems: 'center', backgroundColor: '#FFF', borderRadius: 24, marginBottom: 12, elevation: 1 },
-  convAvatar: { width: 60, height: 60, borderRadius: 20 },
-  convContent: { flex: 1, marginLeft: 16 },
-  convHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-  convName: { fontSize: 16, fontWeight: '800', color: '#0F172A' },
-  convTime: { fontSize: 11, color: '#94A3B8' },
-  convLastMsg: { fontSize: 14, color: '#64748B' },
-  convLastMsgUnread: { color: '#0F172A', fontWeight: '800' },
-  unreadBadge: { backgroundColor: '#F43F5E', width: 22, height: 22, borderRadius: 11, justifyContent: 'center', alignItems: 'center', marginLeft: 8 },
-  unreadText: { color: '#FFF', fontSize: 10, fontWeight: '900' },
-  chatHeader: { flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: '#FFF', borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
-  backButton: { padding: 8 },
-  headerInfo: { marginLeft: 8 },
-  chatPartnerName: { fontSize: 18, fontWeight: '900', color: '#0F172A' },
-  chatPartnerStatus: { fontSize: 10, fontWeight: '800' },
-  chatContainer: { flex: 1, backgroundColor: '#F8FAFC' },
-  messageWrapper: { marginBottom: 16, maxWidth: '80%' },
-  myMsgWrapper: { alignSelf: 'flex-end', alignItems: 'flex-end' },
-  theirMsgWrapper: { alignSelf: 'flex-start', alignItems: 'flex-start' },
-  msgBubble: { padding: 14, borderRadius: 24 },
-  myMsgBubble: { backgroundColor: '#2563EB', borderBottomRightRadius: 4 },
-  theirMsgBubble: { backgroundColor: '#FFF', borderBottomLeftRadius: 4, borderWidth: 1, borderColor: '#F1F5F9' },
-  msgText: { fontSize: 15, lineHeight: 20 },
-  myMsgText: { color: '#FFF' },
-  theirMsgText: { color: '#1E293B' },
-  msgFooter: { flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 4 },
-  msgTime: { fontSize: 10, color: '#94A3B8' },
-  floatingInputBar: { position: 'absolute', bottom: 24, left: 16, right: 16, flexDirection: 'row', backgroundColor: '#FFF', borderRadius: 32, padding: 8, alignItems: 'center', elevation: 10, zIndex: 100 },
-  textInput: { flex: 1, paddingHorizontal: 16, maxHeight: 100, color: '#1E293B' },
-  sendBtn: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#2563EB', justifyContent: 'center', alignItems: 'center' }
+  safeArea: { flex: 1, backgroundColor: '#FFF' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  listHeader: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'space-between', 
+    paddingHorizontal: 16, 
+    paddingVertical: 12,
+    backgroundColor: '#FFF'
+  },
+  listHeaderTitle: { fontSize: 24, fontWeight: '800', color: '#000', flex: 1, textAlign: 'center' },
+  homeBtn: { 
+    width: 44, 
+    height: 44, 
+    borderRadius: 22, 
+    backgroundColor: '#F0F8FF', 
+    justifyContent: 'center', 
+    alignItems: 'center',
+    shadowColor: '#0084FF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: '#E1F0FF'
+  },
+  editBtn: { 
+    width: 42, 
+    height: 42, 
+    borderRadius: 21, 
+    backgroundColor: '#F0F0F0', 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  
+  searchBarArea: { paddingHorizontal: 16, marginBottom: 16 },
+  searchInner: { 
+    flexDirection: 'row', 
+    backgroundColor: '#F0F0F0', 
+    borderRadius: 12, 
+    paddingHorizontal: 12, 
+    height: 40, 
+    alignItems: 'center' 
+  },
+  searchInput: { flex: 1, marginLeft: 8, fontSize: 16, color: '#000' },
+
+  conversationList: { paddingHorizontal: 16 },
+  conversationItem: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+  itemAvatarContainer: { position: 'relative' },
+  itemAvatar: { width: 64, height: 64, borderRadius: 32 },
+  activeStatusRing: { 
+    position: 'absolute', 
+    bottom: 0, 
+    right: 2, 
+    width: 16, 
+    height: 16, 
+    borderRadius: 8, 
+    backgroundColor: '#31A24C', 
+    borderWidth: 3, 
+    borderColor: '#FFF' 
+  },
+  itemContent: { flex: 1, marginLeft: 14 },
+  itemName: { fontSize: 17, fontWeight: '500', color: '#050505', marginBottom: 2 },
+  unreadName: { fontWeight: '700' },
+  itemLastRow: { flexDirection: 'row', alignItems: 'center' },
+  itemLastMsg: { fontSize: 14, color: '#65676B', maxWidth: '75%' },
+  unreadMsg: { color: '#000', fontWeight: '700' },
+  itemDot: { color: '#65676B', fontSize: 12 },
+  itemTime: { color: '#65676B', fontSize: 14 },
+  unreadBlueDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#0084FF' },
+
+  // CHAT SCREEN
+  chatSafeArea: { flex: 1, backgroundColor: '#FFF' },
+  messengerHeader: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    paddingHorizontal: 8, 
+    paddingVertical: 8, 
+    borderBottomWidth: 0.5, 
+    borderBottomColor: '#E5E5E5' 
+  },
+  headerActionBtn: { padding: 6 },
+  headerPartnerInfo: { flex: 1, flexDirection: 'row', alignItems: 'center', marginLeft: 4 },
+  headerAvatarContainer: { position: 'relative', marginRight: 10 },
+  headerAvatar: { width: 36, height: 36, borderRadius: 18 },
+  headerStatusDot: { 
+    position: 'absolute', 
+    bottom: 0, 
+    right: 0, 
+    width: 10, 
+    height: 10, 
+    borderRadius: 5, 
+    backgroundColor: '#31A24C', 
+    borderWidth: 2, 
+    borderColor: '#FFF' 
+  },
+  headerName: { fontSize: 16, fontWeight: '700', color: '#000' },
+  headerSubtext: { fontSize: 12, color: '#65676B' },
+  headerRightActions: { flexDirection: 'row', gap: 4 },
+
+  chatKeyboardArea: { flex: 1 },
+  messageListContent: { paddingHorizontal: 12, paddingBottom: 20, paddingTop: 10 },
+  msgContainer: { marginBottom: 3 },
+  myMsgContainer: { alignItems: 'flex-end' },
+  theirMsgContainer: { alignItems: 'flex-start' },
+  msgBubbleRow: { flexDirection: 'row', alignItems: 'flex-end' },
+  smallAvatar: { width: 24, height: 24, borderRadius: 12, marginRight: 8, marginBottom: 2 },
+  smallAvatarPlaceholder: { width: 24, height: 24, marginRight: 8 },
+  
+  msgBubble: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20, maxWidth: width * 0.72 },
+  myBubble: { borderBottomRightRadius: 4 },
+  theirBubble: { backgroundColor: '#E4E6EB', borderBottomLeftRadius: 4 },
+  
+  msgText: { fontSize: 16, lineHeight: 22 },
+  myText: { color: '#FFF' },
+  theirText: { color: '#050505' },
+  
+  readIndicator: { marginTop: 2 },
+  readAvatar: { width: 14, height: 14, borderRadius: 7 },
+
+  messengerInputBar: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    paddingHorizontal: 8, 
+    paddingVertical: 10,
+    backgroundColor: '#FFF'
+  },
+  inputActionBtn: { padding: 5 },
+  inputWrapper: { 
+    flex: 1, 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: '#F0F2F5', 
+    borderRadius: 20, 
+    paddingHorizontal: 12, 
+    marginHorizontal: 4,
+    minHeight: 36
+  },
+  textInputArea: { flex: 1, color: '#000', fontSize: 16, paddingVertical: 8, maxHeight: 100 },
+  emojiBtn: { padding: 4 },
+  sendIconBtn: { padding: 6, marginLeft: 2 }
 });
 
 export default MessageScreen;

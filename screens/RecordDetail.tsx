@@ -14,7 +14,6 @@ import {
   Platform,
   StatusBar,
   SafeAreaView,
-  Pressable,
   RefreshControl,
   FlatList,
   KeyboardAvoidingView,
@@ -26,1516 +25,838 @@ import { BlurView } from 'expo-blur';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import FlashMessage, { showMessage } from 'react-native-flash-message';
+import { Message, TreatmentStep, Record } from '../types';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
-
-// Interfaces
-interface Message {
-  _id?: string;
-  sender_id: string;
-  receiver_id: string;
-  message: string;
-  message_type: 'text' | 'image' | 'file';
-  timestamp: Date;
-  read: boolean;
-  appointment_id?: string;
-  medical_record_id?: string;
-}
-
-interface TreatmentStep {
-  stepNumber: number;
-  title: string;
-  description: string;
-  medication?: string;
-  dosage?: string;
-  duration?: string;
-  instructions?: string;
-  status: 'pending' | 'in-progress' | 'scheduled' | 'completed' | 'approved' | 'rejected';
-  completedAt?: Date;
-  patient_message?: string;
-  doctorNotes?: string;
-  approval_requested?: boolean;
-  approval_requested_at?: Date;
-  condition_description?: string;
-  rejectionReason?: string;
-  rejectedAt?: Date;
-  isPhysicalVisit?: boolean;
-  reExaminationScheduled?: boolean;
-  reExaminationDate?: Date;
-  reExaminationAppointmentId?: string;
-  arrivalConfirmed?: boolean;
-  arrivalConfirmedAt?: Date;
-  _id?: string;
-}
-
-interface Record {
-  _id: string;
-  appointment_id?: {
-    _id: string;
-    appointment_date?: string;
-    appointment_time?: string;
-  };
-  user_id?: {
-    _id: string;
-    name: string;
-    email: string;
-    phoneNumber?: string;
-    dateOfBirth?: string;
-    gender?: string;
-    avatar?: string;
-  };
-  doctor_id?: {
-    _id: string;
-    name: string;
-    email: string;
-    specialty_id?: {
-      name: string;
-      description?: string;
-    };
-    avatar?: string;
-  };
-  diagnosis: string;
-  treatment_plan: TreatmentStep[];
-  consultation_status: 'in-progress' | 'completed';
-  status: 'active' | 'resolved';
-  priority: 'low' | 'medium' | 'high' | 'urgent';
-  notes?: string;
-  severity?: 'mild' | 'moderate' | 'severe' | 'critical';
-  created_at: string;
-  updated_at: string;
-  userRole?: 'patient' | 'doctor';
-}
-
 const API_BASE_URL = 'http://localhost:3000/api';
-
-// Flash Message Helper
-const showNotification = (message: string, type: 'success' | 'warning' | 'danger' | 'info' = 'info') => {
-  showMessage({
-    message,
-    type,
-    duration: 4000,
-    floating: true,
-    icon: type,
-  });
-};
 
 const RecordDetail: React.FC = () => {
   const route = useRoute<any>();
   const navigation = useNavigation();
-  const { record: initialRecord } = route.params;
-  
-  // State
-  const [record, setRecord] = useState<Record>(initialRecord);
-  const [treatmentPlan, setTreatmentPlan] = useState<TreatmentStep[]>(initialRecord.treatment_plan || []);
+  const [record, setRecord] = useState<Record>(route.params?.record || null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeStep, setActiveStep] = useState<string | null>(null);
-  const [showNotesModal, setShowNotesModal] = useState(false);
-  const [currentStep, setCurrentStep] = useState<TreatmentStep | null>(null);
-  const [doctorNotes, setDoctorNotes] = useState('');
-  const [requestMessage, setRequestMessage] = useState('');
-  const [showRequestModal, setShowRequestModal] = useState(false);
-  
-  // Chat states
   const [showChatModal, setShowChatModal] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [newMessage, setNewMessage] = useState('');
-  const [sendingMessage, setSendingMessage] = useState(false);
-  const [chatLoading, setChatLoading] = useState(false);
-  
-  // Complete step modal states
   const [showCompleteModal, setShowCompleteModal] = useState(false);
   const [selectedStep, setSelectedStep] = useState<TreatmentStep | null>(null);
-  const [conditionDescription, setConditionDescription] = useState('');
-  const [patientMessage, setPatientMessage] = useState('');
   
-  // Confirm arrival modal
-  const [showConfirmArrivalModal, setShowConfirmArrivalModal] = useState(false);
-  const [arrivalStep, setArrivalStep] = useState<TreatmentStep | null>(null);
-  
-  // Animation values
+  const [conditionDesc, setConditionDesc] = useState('');
+  const [patientMsg, setPatientMsg] = useState('');
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [newMessage, setNewMessage] = useState('');
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(50)).current;
-  const scaleAnim = useRef(new Animated.Value(0.95)).current;
-  const completeModalAnim = useRef(new Animated.Value(screenHeight)).current;
-  const requestModalAnim = useRef(new Animated.Value(screenHeight)).current;
-  const chatModalAnim = useRef(new Animated.Value(screenHeight)).current;
-  const confirmArrivalAnim = useRef(new Animated.Value(screenHeight)).current;
-  
-  // Refs
-  const flatListRef = useRef<FlatList>(null);
-  const scrollViewRef = useRef<ScrollView>(null);
+  const slideAnim = useRef(new Animated.Value(20)).current;
+  const progressAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // Entrance animations
+    if (record?._id && record?._id !== 'HT-88291-EN') {
+      fetchLatestData();
+    }
     Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
+      Animated.timing(fadeAnim, { 
+        toValue: 1, 
+        duration: 600, 
+        useNativeDriver: true 
       }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.timing(scaleAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
+      Animated.timing(slideAnim, { 
+        toValue: 0, 
+        duration: 600, 
+        useNativeDriver: true 
       }),
     ]).start();
+    
+    // Animate progress bar
+    setTimeout(() => {
+      Animated.timing(progressAnim, {
+        toValue: calculateProgress(),
+        duration: 1000,
+        useNativeDriver: false,
+      }).start();
+    }, 300);
   }, []);
+
+  const fetchLatestData = async () => {
+    try {
+      const token = await AsyncStorage.getItem('authToken');
+      const response = await axios.get(`${API_BASE_URL}/medical-records/my-records`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const current = response.data.find((r: Record) => r._id === record._id);
+      if (current) setRecord(current);
+    } catch (error) {
+      console.error("Fetch Error:", error);
+    }
+  };
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchRecordData();
+    await fetchLatestData();
     setRefreshing(false);
   }, []);
 
-  const userRole = record.userRole || 'patient';
-
-  // Helper functions
-  const formatDate = (dateString: string) => {
-    try {
-      return new Date(dateString).toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric'
-      });
-    } catch (error) {
-      return dateString;
-    }
-  };
-
-  const formatTime = (date: Date) => {
-    return date.toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    });
-  };
-
-  const getDoctorAvatarUrl = (avatarPath: string | undefined): string => {
-    if (!avatarPath) return '';
-    if (avatarPath.startsWith('http')) return avatarPath;
-    if (avatarPath.startsWith('doctor-')) {
-      return `${API_BASE_URL}/doctors/avatar/${avatarPath}?t=${Date.now()}`;
-    }
-    return '';
-  };
-
-  const shouldShowAvatar = (avatarPath: string | undefined): boolean => {
-    if (!avatarPath) return false;
-    return avatarPath.startsWith('doctor-') || avatarPath.startsWith('http');
-  };
-
-  const canStartTreatment = treatmentPlan.length > 0 && 
-                           treatmentPlan[0]?.status === 'pending' && 
-                           userRole === 'patient';
-
-  const getCurrentActiveStep = () => {
-    return treatmentPlan.find(step => step.status === 'in-progress') || null;
-  };
-
-  // Modal functions
-  const openCompleteModal = (step: TreatmentStep) => {
-    setSelectedStep(step);
-    setConditionDescription('');
-    setPatientMessage('');
-    setShowCompleteModal(true);
-    
-    Animated.spring(completeModalAnim, {
-      toValue: 0,
-      tension: 100,
-      friction: 8,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const closeCompleteModal = () => {
-    Animated.timing(completeModalAnim, {
-      toValue: screenHeight,
-      duration: 300,
-      useNativeDriver: true,
-    }).start(() => {
-      setShowCompleteModal(false);
-      setSelectedStep(null);
-      completeModalAnim.setValue(screenHeight);
-    });
-  };
-
-  const openRequestModal = (step: TreatmentStep) => {
-    setCurrentStep(step);
-    setRequestMessage('');
-    setShowRequestModal(true);
-    
-    Animated.spring(requestModalAnim, {
-      toValue: 0,
-      tension: 100,
-      friction: 8,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const closeRequestModal = () => {
-    Animated.timing(requestModalAnim, {
-      toValue: screenHeight,
-      duration: 300,
-      useNativeDriver: true,
-    }).start(() => {
-      setShowRequestModal(false);
-      setCurrentStep(null);
-      setRequestMessage('');
-      requestModalAnim.setValue(screenHeight);
-    });
-  };
-
-  const openConfirmArrivalModal = (step: TreatmentStep) => {
-    setArrivalStep(step);
-    setShowConfirmArrivalModal(true);
-    
-    Animated.spring(confirmArrivalAnim, {
-      toValue: 0,
-      tension: 100,
-      friction: 8,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const closeConfirmArrivalModal = () => {
-    Animated.timing(confirmArrivalAnim, {
-      toValue: screenHeight,
-      duration: 300,
-      useNativeDriver: true,
-    }).start(() => {
-      setShowConfirmArrivalModal(false);
-      setArrivalStep(null);
-      confirmArrivalAnim.setValue(screenHeight);
-    });
-  };
-
-  const openChatModal = () => {
-    setShowChatModal(true);
-    loadMessages();
-    
-    Animated.spring(chatModalAnim, {
-      toValue: 0,
-      tension: 100,
-      friction: 8,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const closeChatModal = () => {
-    Animated.timing(chatModalAnim, {
-      toValue: screenHeight,
-      duration: 300,
-      useNativeDriver: true,
-    }).start(() => {
-      setShowChatModal(false);
-      setNewMessage('');
-      chatModalAnim.setValue(screenHeight);
-    });
-  };
-
-  // API functions
-  const fetchRecordData = async () => {
+  const handleActivateStep = async (stepNumber: number) => {
+    setLoading(true);
     try {
       const token = await AsyncStorage.getItem('authToken');
-      const response = await axios.get(
-        `${API_BASE_URL}/medical-records/my-records`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      
-      const currentRecord = response.data.find((r: Record) => r._id === record._id);
-      if (currentRecord) {
-        setRecord(currentRecord);
-        setTreatmentPlan(currentRecord.treatment_plan || []);
-      }
-    } catch (error) {
-      console.error('Error fetching record data:', error);
-      showNotification('Failed to refresh data', 'danger');
+      await axios.patch(`${API_BASE_URL}/medical-records/${record._id}/steps/${stepNumber}/activate`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      showMessage({ 
+        message: "Phase Started Successfully!", 
+        type: "success",
+        floating: true 
+      });
+      fetchLatestData();
+    } catch (error: any) {
+      showMessage({ 
+        message: "Failed to start phase", 
+        type: "danger",
+        floating: true 
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleCompleteStep = async () => {
-    if (!selectedStep || !conditionDescription.trim()) return;
-    
+    if (!selectedStep || !conditionDesc.trim()) return;
     setLoading(true);
-    
     try {
       const token = await AsyncStorage.getItem('authToken');
-      
-      const response = await axios.patch(
+      await axios.patch(
         `${API_BASE_URL}/medical-records/${record._id}/steps/${selectedStep.stepNumber}/complete-with-message`,
-        { 
-          patientMessage: patientMessage || "Completed this step",
-          conditionDescription: conditionDescription
-        },
-        { 
-          headers: { 
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          } 
-        }
-      );
-
-      if (response.data.success) {
-        setRecord(response.data.data.record || response.data.data);
-        setTreatmentPlan(response.data.data.record?.treatment_plan || response.data.data.treatment_plan);
-        showNotification('Step completed successfully!', 'success');
-        closeCompleteModal();
-        fetchRecordData();
-      }
-      
-    } catch (error: any) {
-      console.error('Error completing step:', error);
-      
-      // Fallback for UI testing
-      console.log('Using fallback for UI demo');
-      const updatedSteps = treatmentPlan.map(step => {
-        if (step.stepNumber === selectedStep.stepNumber) {
-          return {
-            ...step,
-            status: 'completed',
-            condition_description: conditionDescription,
-            patient_message: patientMessage,
-            approval_requested: true,
-            completedAt: new Date()
-          };
-        }
-        return step;
-      });
-      
-      setTreatmentPlan(updatedSteps);
-      showNotification('Step completed (demo mode)', 'success');
-      closeCompleteModal();
-      
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleConfirmArrival = async () => {
-    if (!arrivalStep) return;
-    
-    setLoading(true);
-    try {
-      const token = await AsyncStorage.getItem('authToken');
-      
-      const response = await axios.post(
-        `${API_BASE_URL}/patients/consultations/${record._id}/steps/${arrivalStep.stepNumber}/confirm-arrival`,
-        {},
+        { patientMessage: patientMsg, conditionDescription: conditionDesc },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      
-      if (response.data.success) {
-        showNotification('Arrival confirmed. Doctor has been notified.', 'success');
-        closeConfirmArrivalModal();
-        fetchRecordData();
-      } else {
-        showNotification(response.data.message || 'Failed to confirm arrival', 'danger');
-      }
+      setShowCompleteModal(false);
+      setConditionDesc('');
+      setPatientMsg('');
+      showMessage({ 
+        message: "Health Report Sent Successfully!", 
+        type: "success",
+        floating: true 
+      });
+      fetchLatestData();
     } catch (error: any) {
-      console.error('Error confirming arrival:', error);
-      showNotification('Error confirming arrival', 'danger');
+      showMessage({ 
+        message: "Failed to send report", 
+        type: "danger",
+        floating: true 
+      });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleStartTreatment = async () => {
-    if (treatmentPlan.length === 0) return;
-    
+  const handleConfirmArrival = async (stepNumber: number) => {
     setLoading(true);
     try {
       const token = await AsyncStorage.getItem('authToken');
-      const firstStep = treatmentPlan[0];
-      
-      const response = await axios.patch(
-        `${API_BASE_URL}/medical-records/${record._id}/steps/${firstStep.stepNumber}/activate`,
-        {},
-        { 
-          headers: { Authorization: `Bearer ${token}` } 
-        }
-      );
-
-      if (response.data.success) {
-        setRecord(response.data.data.record);
-        setTreatmentPlan(response.data.data.record.treatment_plan);
-        showNotification('Treatment started successfully!', 'success');
-      }
-      
+      await axios.post(`${API_BASE_URL}/doctor/consultations/${record._id}/steps/${stepNumber}/confirm-arrival`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      showMessage({ 
+        message: "Arrival Confirmed Successfully!", 
+        type: "success",
+        floating: true 
+      });
+      fetchLatestData();
     } catch (error: any) {
-      console.error('Error starting treatment:', error);
-      showNotification('Failed to start treatment', 'danger');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSendApprovalRequest = async () => {
-    if (!currentStep) return;
-    
-    setLoading(true);
-    try {
-      const token = await AsyncStorage.getItem('authToken');
-      
-      const response = await axios.post(
-        `${API_BASE_URL}/medical-records/${record._id}/steps/${currentStep.stepNumber}/request-approval`,
-        { 
-          message: requestMessage,
-          patientName: record.user_id?.name || 'Patient'
-        },
-        { 
-          headers: { Authorization: `Bearer ${token}` } 
-        }
-      );
-
-      if (response.data.success) {
-        setRecord(response.data.data.record);
-        setTreatmentPlan(response.data.data.record.treatment_plan);
-        showNotification('Approval request sent!', 'success');
-        closeRequestModal();
-      }
-      
-    } catch (error: any) {
-      console.error('Error sending approval request:', error);
-      showNotification('Failed to send request', 'danger');
+      showMessage({ 
+        message: "Confirmation Failed", 
+        type: "danger",
+        floating: true 
+      });
     } finally {
       setLoading(false);
     }
   };
 
   const loadMessages = async () => {
-    if (!record._id || !record.doctor_id?._id) return;
-    
-    setChatLoading(true);
     try {
       const token = await AsyncStorage.getItem('authToken');
-      const response = await axios.get(
-        `${API_BASE_URL}/messages/record/${record._id}`, 
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-
-      if (response.data.success) {
-        setMessages(response.data.data.messages);
-        setTimeout(() => {
-          flatListRef.current?.scrollToEnd({ animated: true });
-        }, 100);
-      }
-    } catch (error) {
-      console.error('Error loading messages:', error);
-    } finally {
-      setChatLoading(false);
+      const res = await axios.get(`${API_BASE_URL}/messages/record/${record._id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setMessages(res.data.data.messages || []);
+    } catch (e) { 
+      console.log("Load messages error:", e); 
     }
   };
 
-  const sendMessage = async () => {
-    if (!newMessage.trim() || !record._id || !record.doctor_id?._id) return;
-
-    setSendingMessage(true);
-    const tempMessageId = Date.now().toString();
-    const newMessageObj: Message = {
-      _id: tempMessageId,
-      sender_id: record.user_id?._id || 'patient',
-      receiver_id: record.doctor_id._id,
-      message: newMessage.trim(),
-      message_type: 'text',
-      timestamp: new Date(),
-      read: false,
-      medical_record_id: record._id
+  const sendChatMessage = async () => {
+    if (!newMessage.trim()) return;
+    const tempMessage = {
+      _id: `temp_${Date.now()}`,
+      sender_id: record.user_id._id,
+      message: newMessage,
+      timestamp: new Date().toISOString(),
+      read: false
     };
 
-    // Optimistic update
-    setMessages(prev => [...prev, newMessageObj]);
+    setMessages(prev => [...prev, tempMessage]);
+    const messageToSend = newMessage;
     setNewMessage('');
-
+    
     try {
       const token = await AsyncStorage.getItem('authToken');
-      const response = await axios.post(
-        `${API_BASE_URL}/messages/send`,
-        {
-          receiver_id: record.doctor_id._id,
-          message: newMessage.trim(),
-          message_type: 'text',
-          medical_record_id: record._id,
-          appointment_id: record.appointment_id?._id
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-
-      if (response.data.success) {
-        setMessages(prev => 
-          prev.map(msg => 
-            msg._id === tempMessageId ? response.data.data.message : msg
-          )
-        );
-      }
-    } catch (error) {
-      console.error('Error sending message:', error);
-      showNotification('Failed to send message', 'danger');
-      setMessages(prev => prev.filter(msg => msg._id !== tempMessageId));
-    } finally {
-      setSendingMessage(false);
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
+      await axios.post(`${API_BASE_URL}/messages/send`, {
+        receiver_id: record.doctor_id._id,
+        message: messageToSend,
+        medical_record_id: record._id
+      }, { headers: { Authorization: `Bearer ${token}` } });
+    } catch (e) { 
+      showMessage({ 
+        message: "Failed to send message", 
+        type: "danger",
+        floating: true 
+      });
     }
   };
-
-  // UI Helper Functions
-  const getStatusConfig = (status: string) => {
-    const configs = {
-      pending: {
-        icon: 'time-outline' as const,
-        color: '#FF9500',
-        gradient: ['#FFB84D', '#FF9500'],
-        text: 'Pending',
-        bgColor: '#FFF3E0'
-      },
-      'in-progress': {
-        icon: 'play-circle-outline' as const,
-        color: '#2196F3',
-        gradient: ['#42A5F5', '#2196F3'],
-        text: 'In Progress',
-        bgColor: '#E3F2FD'
-      },
-      scheduled: {
-        icon: 'calendar-outline' as const,
-        color: '#2196F3',
-        gradient: ['#42A5F5', '#2196F3'],
-        text: 'Scheduled',
-        bgColor: '#E3F2FD'
-      },
-      completed: {
-        icon: 'checkmark-circle-outline' as const,
-        color: '#FF9800',
-        gradient: ['#FFB74D', '#FF9800'],
-        text: 'Completed',
-        bgColor: '#FFF3E0'
-      },
-      approved: {
-        icon: 'checkmark-done-circle' as const,
-        color: '#4CAF50',
-        gradient: ['#66BB6A', '#4CAF50'],
-        text: 'Approved',
-        bgColor: '#E8F5E8'
-      },
-      rejected: {
-        icon: 'alert-circle-outline' as const,
-        color: '#F44336',
-        gradient: ['#EF5350', '#C62828'],
-        text: 'Rejected',
-        bgColor: '#FFEBEE'
-      }
-    };
-    return configs[status as keyof typeof configs] || configs.pending;
-  };
-
-  const ProgressBar = ({ progress }: { progress: number }) => (
-    <View style={styles.progressBarContainer}>
-      <View style={[styles.progressBar, { width: `${progress}%` }]}>
-        <LinearGradient
-          colors={['#4CAF50', '#2196F3']}
-          style={StyleSheet.absoluteFill}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-        />
-      </View>
-    </View>
-  );
 
   const calculateProgress = () => {
-    if (treatmentPlan.length === 0) return 0;
-    const completedCount = treatmentPlan.filter(step => step.status === 'approved').length;
-    return (completedCount / treatmentPlan.length) * 100;
+    if (!record.treatment_plan?.length) return 0;
+    const done = record.treatment_plan.filter(s => 
+      s.status === 'approved' || s.status === 'completed'
+    ).length;
+    return (done / record.treatment_plan.length) * 100;
   };
 
-  const getSeverityColor = (severity?: string) => {
-    switch (severity) {
-      case 'critical': return '#F44336';
-      case 'severe': return '#FF9800';
-      case 'moderate': return '#FFC107';
-      case 'mild': return '#4CAF50';
-      default: return '#666';
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'completed': return '#10B981';
+      case 'approved': return '#3B82F6';
+      case 'in-progress': return '#F59E0B';
+      case 'scheduled': return '#8B5CF6';
+      case 'pending': return '#94A3B8';
+      default: return '#CBD5E1';
     }
   };
 
-  const renderMessageItem = ({ item }: { item: Message }) => {
-    const isPatientMessage = item.sender_id !== record.doctor_id?._id;
-    
-    return (
-      <View style={[
-        styles.messageContainer,
-        isPatientMessage ? styles.patientMessage : styles.doctorMessage
-      ]}>
-        <View style={[
-          styles.messageBubble,
-          isPatientMessage ? styles.patientBubble : styles.doctorBubble
-        ]}>
-          <Text style={[
-            styles.messageText,
-            isPatientMessage ? styles.patientMessageText : styles.doctorMessageText
-          ]}>
-            {item.message}
-          </Text>
-          <Text style={[
-            styles.messageTime,
-            isPatientMessage ? styles.patientMessageTime : styles.doctorMessageTime
-          ]}>
-            {formatTime(new Date(item.timestamp))}
-          </Text>
-        </View>
-      </View>
-    );
-  };
-
-  const renderStepActions = (step: TreatmentStep) => {
-    if (loading && activeStep === step.stepNumber.toString()) {
-      return (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="small" color="#1976D2" />
-          <Text style={styles.loadingText}>Processing...</Text>
-        </View>
-      );
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'completed': return 'checkmark-circle';
+      case 'approved': return 'shield-checkmark';
+      case 'in-progress': return 'time';
+      case 'scheduled': return 'calendar';
+      case 'pending': return 'ellipsis-horizontal';
+      default: return 'help-circle';
     }
-
-    if (userRole === 'patient') {
-      switch (step.status) {
-        case 'in-progress':
-          return (
-            <Pressable
-              style={styles.actionButton}
-              onPress={() => openCompleteModal(step)}
-              disabled={loading}
-            >
-              <LinearGradient colors={['#2196F3', '#1976D2']} style={styles.actionButtonGradient}>
-                <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />
-                <Text style={styles.actionButtonText}>Complete Step</Text>
-              </LinearGradient>
-            </Pressable>
-          );
-        
-        case 'completed' && !step.approval_requested:
-          return (
-            <Pressable
-              style={styles.requestApprovalButton}
-              onPress={() => openRequestModal(step)}
-              disabled={loading}
-            >
-              <LinearGradient colors={['#FF9800', '#F57C00']} style={styles.actionButtonGradient}>
-                <Ionicons name="notifications-outline" size={18} color="#fff" />
-                <Text style={styles.actionButtonText}>Request Approval</Text>
-              </LinearGradient>
-            </Pressable>
-          );
-        
-        case 'completed' && step.approval_requested:
-          return (
-            <View style={styles.pendingApprovalContainer}>
-              <View style={styles.pendingApprovalBadge}>
-                <Ionicons name="time-outline" size={18} color="#FF9800" />
-                <Text style={styles.pendingApprovalText}>Awaiting Review</Text>
-              </View>
-              {step.condition_description && (
-                <Text style={styles.conditionDescriptionText}>
-                  <Ionicons name="chatbubble" size={12} color="#FF9800" /> 
-                  You submitted: {step.condition_description.substring(0, 60)}...
-                </Text>
-              )}
-            </View>
-          );
-        
-        case 'approved':
-          return (
-            <View style={styles.completedContainer}>
-              <View style={styles.completedBadge}>
-                <Ionicons name="checkmark-done-circle" size={18} color="#4CAF50" />
-                <Text style={styles.completedText}>Approved by Doctor</Text>
-              </View>
-              {step.doctorNotes && (
-                <Text style={styles.doctorNotesText}>
-                  <Ionicons name="document-text" size={12} color="#4CAF50" /> 
-                  Doctor's note: {step.doctorNotes}
-                </Text>
-              )}
-            </View>
-          );
-        
-        case 'rejected':
-          return (
-            <View style={styles.completedContainer}>
-              <View style={styles.rejectedBadge}>
-                <Ionicons name="alert-circle" size={18} color="#D32F2F" />
-                <Text style={styles.rejectedText}>Needs Revision</Text>
-              </View>
-              {step.rejectionReason && (
-                <Text style={styles.rejectionReasonText}>
-                  <Ionicons name="alert-circle" size={12} color="#D32F2F" /> 
-                  Reason: {step.rejectionReason}
-                </Text>
-              )}
-            </View>
-          );
-        
-        default:
-          return null;
-      }
-    }
-    
-    return null;
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#1565C0" />
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <FlashMessage position="top" />
-      
-      {/* Header */}
+
+      {/* Modern Header with Gradient */}
       <LinearGradient
-        colors={['#1976D2', '#1565C0', '#0D47A1']}
-        style={styles.header}
+        colors={['#FFFFFF', '#F8FAFC']}
+        style={styles.headerGradient}
       >
-        <View style={styles.headerContent}>
-          <Pressable
+        <View style={styles.header}>
+          <TouchableOpacity 
+            onPress={() => navigation.goBack()} 
             style={styles.backButton}
-            onPress={() => navigation.goBack()}
+            activeOpacity={0.7}
           >
-            <Ionicons name="chevron-back" size={24} color="#fff" />
-          </Pressable>
+            <Ionicons name="chevron-back" size={24} color="#1E293B" />
+          </TouchableOpacity>
           
-          <View style={styles.headerTextContainer}>
-            <Text style={styles.headerTitle}>Medical Consultation</Text>
-            <Text style={styles.headerSubtitle}>Treatment Plan & Progress</Text>
+          <View style={styles.headerCenter}>
+            <Text style={styles.headerTitle}>Treatment Journey</Text>
+            <Text style={styles.recordId}>#{record._id}</Text>
           </View>
           
           <TouchableOpacity 
+            onPress={onRefresh} 
             style={styles.refreshButton}
-            onPress={onRefresh}
-            disabled={refreshing}
+            activeOpacity={0.7}
           >
             <Ionicons 
               name="refresh" 
               size={20} 
-              color="#fff" 
+              color="#64748B" 
+              style={{ transform: [{ rotate: refreshing ? '180deg' : '0deg' }] }}
             />
           </TouchableOpacity>
         </View>
-        
-        <ProgressBar progress={calculateProgress()} />
+
+        {/* Progress Section */}
+        <View style={styles.progressSection}>
+          <View style={styles.progressHeader}>
+            <Text style={styles.progressLabel}>Overall Progress</Text>
+            <Animated.Text style={styles.progressPercentage}>
+              {Math.round(progressAnim._value)}%
+            </Animated.Text>
+          </View>
+          
+          <View style={styles.progressBarContainer}>
+            <View style={styles.progressBarBackground}>
+              <Animated.View 
+                style={[
+                  styles.progressBarFill,
+                  {
+                    width: progressAnim.interpolate({
+                      inputRange: [0, 100],
+                      outputRange: ['0%', '100%']
+                    })
+                  }
+                ]}
+              />
+            </View>
+            <View style={styles.progressSteps}>
+              {record.treatment_plan?.map((step, index) => (
+                <View key={index} style={styles.stepDotContainer}>
+                  <View 
+                    style={[
+                      styles.stepDot,
+                      { 
+                        backgroundColor: step.status === 'completed' || step.status === 'approved' 
+                          ? '#3B82F6' 
+                          : '#E2E8F0' 
+                      }
+                    ]} 
+                  />
+                  <Text style={styles.stepNumber}>Phase {index + 1}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        </View>
       </LinearGradient>
 
-      <ScrollView
-        ref={scrollViewRef}
-        style={styles.scrollView}
+      <ScrollView 
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl 
+            refreshing={refreshing} 
+            onRefresh={onRefresh}
+            tintColor="#3B82F6"
+          />
         }
       >
-        {/* Doctor Card */}
+        {/* Doctor Info Card */}
         <Animated.View 
           style={[
             styles.doctorCard,
-            { transform: [{ translateY: slideAnim }, { scale: scaleAnim }] }
+            { 
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }] 
+            }
           ]}
         >
-          <View style={styles.cardContent}>
-            <View style={styles.doctorHeader}>
-              <View style={styles.avatarContainer}>
-                {record.doctor_id?.avatar && shouldShowAvatar(record.doctor_id.avatar) ? (
-                  <Image 
-                    source={{ uri: getDoctorAvatarUrl(record.doctor_id.avatar) }}
-                    style={styles.doctorAvatar}
-                  />
-                ) : (
-                  <View style={styles.avatarPlaceholder}>
-                    <Text style={styles.avatarText}>
-                      {record.doctor_id?.name?.charAt(0) || 'D'}
-                    </Text>
-                  </View>
-                )}
-              </View>
-              <View style={styles.doctorInfo}>
-                <Text style={styles.doctorName}>
-                  {record.doctor_id?.name || 'Doctor'}
+          <View style={styles.doctorCardHeader}>
+            <Text style={styles.sectionTitle}>Your Physician</Text>
+            <TouchableOpacity 
+              onPress={() => { 
+                setShowChatModal(true); 
+                loadMessages(); 
+              }}
+              style={styles.chatButton}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="chatbubble-ellipses" size={20} color="#3B82F6" />
+              <Text style={styles.chatButtonText}>Message</Text>
+            </TouchableOpacity>
+          </View>
+          
+          <View style={styles.doctorInfo}>
+            <View style={styles.avatarContainer}>
+              <LinearGradient 
+                colors={['#3B82F6', '#2563EB']} 
+                style={styles.doctorAvatar}
+              >
+                <Text style={styles.avatarText}>
+                  {record.doctor_id.name.charAt(0)}
                 </Text>
-                <Text style={styles.doctorMeta}>
-                  Doctor
-                  {record.doctor_id?.specialty_id ? ` • ${record.doctor_id.specialty_id.name}` : ''}
-                </Text>
-                <Text style={styles.diagnosis}>
-                  Diagnosis: {record.diagnosis}
-                </Text>
-              </View>
+              </LinearGradient>
+              <View style={styles.onlineIndicator} />
             </View>
             
-            <View style={styles.statusContainer}>
-              <View style={[
-                styles.severityChip,
-                { backgroundColor: getSeverityColor(record.severity) + '20' }
-              ]}>
-                <Ionicons 
-                  name="alert-circle-outline" 
-                  size={12} 
-                  color={getSeverityColor(record.severity)} 
-                />
-                <Text style={[
-                  styles.severityText,
-                  { color: getSeverityColor(record.severity) }
-                ]}>
-                  {record.severity || 'Unknown'}
-                </Text>
-              </View>
-              <View style={[
-                styles.statusChip,
-                { 
-                  backgroundColor: record.consultation_status === 'completed' ? '#E8F5E8' : '#E3F2FD' 
-                }
-              ]}>
-                <Ionicons 
-                  name={record.consultation_status === 'completed' ? 'checkmark-done' : 'time'} 
-                  size={12} 
-                  color={record.consultation_status === 'completed' ? '#4CAF50' : '#2196F3'} 
-                />
-                <Text style={[
-                  styles.statusText,
-                  { color: record.consultation_status === 'completed' ? '#4CAF50' : '#2196F3' }
-                ]}>
-                  {record.consultation_status === 'completed' ? 'Completed' : 'In Progress'}
-                </Text>
+            <View style={styles.doctorDetails}>
+              <Text style={styles.doctorName}>Dr. {record.doctor_id.name}</Text>
+              <Text style={styles.doctorSpecialty}>
+                {record.doctor_id.specialty_id?.name || "Specialist"}
+              </Text>
+              <View style={styles.ratingContainer}>
               </View>
             </View>
-
-            {userRole === 'patient' && (
-              <Pressable
-                style={styles.chatButton}
-                onPress={openChatModal}
-              >
-                <LinearGradient
-                  colors={['#1976D2', '#1565C0']}
-                  style={styles.chatButtonGradient}
-                >
-                  <Ionicons name="chatbubble-ellipses" size={18} color="#fff" />
-                  <Text style={styles.chatButtonText}>Message Doctor</Text>
-                </LinearGradient>
-              </Pressable>
-            )}
+          </View>
+          
+          <View style={styles.diagnosisContainer}>
+            <View style={styles.diagnosisHeader}>
+              <Ionicons name="medical" size={18} color="#e20c0c" />
+              <Text style={styles.diagnosisTitle}>Diagnosis</Text>
+            </View>
+            <Text style={styles.diagnosisText}>{record.diagnosis}</Text>
+            <View style={styles.severityBadge}>
+              <Text style={styles.severityText}>
+                {record.severity?.toUpperCase() || 'MODERATE'}
+              </Text>
+            </View>
           </View>
         </Animated.View>
 
-        {/* Stats Section */}
-        <View style={styles.statsContainer}>
-          <View style={styles.statCard}>
-            <Text style={styles.statNumber}>{treatmentPlan.length}</Text>
-            <Text style={styles.statLabel}>Total Steps</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statNumber}>
-              {treatmentPlan.filter(step => step.status === 'approved').length}
-            </Text>
-            <Text style={styles.statLabel}>Approved</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statNumber}>
-              {treatmentPlan.filter(step => step.status === 'in-progress').length}
-            </Text>
-            <Text style={styles.statLabel}>Active</Text>
-          </View>
-        </View>
-
-        {/* Diagnosis Info */}
-        <View style={styles.infoSection}>
-          <View style={styles.infoCard}>
-            <View style={styles.infoHeader}>
-              <View style={styles.infoIcon}>
-                <Ionicons name="medical-outline" size={20} color="#1976D2" />
-              </View>
-              <Text style={styles.infoTitle}>Diagnosis Details</Text>
+        {/* Treatment Timeline */}
+        <View style={styles.timelineContainer}>
+          <View style={styles.timelineHeader}>
+            <Text style={styles.timelineTitle}>Treatment Phases</Text>
+            <View style={styles.timelineLegend}>
+              <View style={styles.legendItem}></View>
             </View>
-            <Text style={styles.infoContent}>{record.diagnosis}</Text>
           </View>
-
-          {record.notes && (
-            <View style={styles.infoCard}>
-              <View style={styles.infoHeader}>
-                <View style={styles.infoIcon}>
-                  <Ionicons name="document-text-outline" size={20} color="#FF9800" />
-                </View>
-                <Text style={styles.infoTitle}>Doctor's Notes</Text>
-              </View>
-              <Text style={styles.infoContent}>{record.notes}</Text>
-            </View>
-          )}
-        </View>
-
-        {/* Start Treatment Button */}
-        {userRole === 'patient' && canStartTreatment && (
-          <View style={styles.actionSection}>
-            <Pressable
-              style={styles.startTreatmentButton}
-              onPress={handleStartTreatment}
-              disabled={loading}
-            >
-              <LinearGradient
-                colors={['#1976D2', '#1565C0']}
-                style={styles.startButtonGradient}
-              >
-                {loading ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <>
-                    <Ionicons name="play-circle-outline" size={20} color="#fff" />
-                    <Text style={styles.startButtonText}>Start Treatment</Text>
-                  </>
-                )}
-              </LinearGradient>
-            </Pressable>
-          </View>
-        )}
-
-        {/* Treatment Plan Section */}
-        <View style={styles.treatmentSection}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Treatment Plan</Text>
-            <Text style={styles.sectionSubtitle}>
-              {treatmentPlan.length > 0 
-                ? 'Follow the treatment steps as prescribed'
-                : 'No treatment steps defined yet'
-              }
-            </Text>
-          </View>
-
-          {treatmentPlan.map((step) => {
-            const statusConfig = getStatusConfig(step.status);
-            const isPhysicalVisit = step.isPhysicalVisit;
-            const isScheduledReExamination = step.reExaminationScheduled;
+          
+          {record.treatment_plan?.map((step, index) => {
+            const isActive = step.status === 'in-progress';
+            const isCompleted = step.status === 'completed' || step.status === 'approved';
+            const isVisit = step.isPhysicalVisit;
+            const statusColor = getStatusColor(step.status);
             
             return (
-              <View
-                key={step.stepNumber}
-                style={[styles.stepCard, { borderLeftColor: statusConfig.color }]}
-              >
-                {/* Step Header */}
-                <View style={styles.stepHeader}>
-                  <View style={[styles.stepNumber, { backgroundColor: statusConfig.color }]}>
-                    <Text style={styles.stepNumberText}>{step.stepNumber}</Text>
+              <View key={index} style={styles.timelineItem}>
+                {/* Timeline Connector */}
+                {index > 0 && (
+                  <View style={[
+                    styles.timelineConnector,
+                    isCompleted && { backgroundColor: statusColor }
+                  ]} />
+                )}
+                
+                {/* Timeline Node */}
+                <View style={styles.timelineNodeContainer}>
+                  <View 
+                    style={[
+                      styles.timelineNode,
+                      { borderColor: statusColor },
+                      isCompleted && { backgroundColor: statusColor }
+                    ]}
+                  >
+                    <Ionicons 
+                      name={getStatusIcon(step.status)} 
+                      size={16} 
+                      color={isCompleted ? "#FFFFFF" : statusColor} 
+                    />
                   </View>
-                  <View style={styles.stepInfo}>
-                    <Text style={styles.stepTitle}>{step.title}</Text>
-                    <Text style={styles.stepDescription}>{step.description}</Text>
-                    
-                    {/* Physical Visit Badge */}
-                    {isPhysicalVisit && (
-                      <View style={styles.physicalVisitBadge}>
-                        <Ionicons name="medical" size={12} color="#D32F2F" />
-                        <Text style={styles.physicalVisitText}>Physical Re-Examination Required</Text>
-                      </View>
-                    )}
-                    
-                    {/* Scheduled Appointment Info */}
-                    {isScheduledReExamination && step.reExaminationDate && (
-                      <View style={styles.scheduledAppointmentContainer}>
-                        <View style={styles.appointmentDateTimeContainer}>
-                          <Ionicons name="calendar" size={16} color="#1976D2" />
-                          <Text style={styles.appointmentDateTime}>
-                            Scheduled for: {new Date(step.reExaminationDate).toLocaleDateString()} at {' '}
-                            {new Date(step.reExaminationDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </View>
+
+                {/* Step Card */}
+                <View style={[
+                  styles.stepCard,
+                  isActive && styles.activeStepCard,
+                ]}>
+                  {/* Card Left Border */}
+                  <View style={[
+                    styles.cardLeftBorder,
+                    { backgroundColor: isVisit ? '#10B981' : '#3B82F6' }
+                  ]} />
+                  
+                  <View style={styles.cardContent}>
+                    <View style={styles.cardHeader}>
+                      <View style={styles.headerLeft}>
+                        <View style={[
+                          styles.stepTypeBadge,
+                          { backgroundColor: isVisit ? '#ECFDF5' : '#EFF6FF' }
+                        ]}>
+                          <Ionicons 
+                            name={isVisit ? "calendar" : "medical-outline"} 
+                            size={14} 
+                            color={isVisit ? '#047857' : '#1D4ED8'} 
+                          />
+                          <Text style={[
+                            styles.stepTypeText,
+                            { color: isVisit ? '#047857' : '#1D4ED8' }
+                          ]}>
+                            {isVisit ? 'RE-EXAMINATION' : 'TREATMENT STEP'}
                           </Text>
                         </View>
+                        <View style={styles.stepNumberContainer}>
+                          <Text style={styles.stepNumberText}>Phase {step.stepNumber}</Text>
+                        </View>
+                      </View>
+                      <View style={[styles.statusBadge, { backgroundColor: `${statusColor}15` }]}>
+                        <Text style={[styles.statusText, { color: statusColor }]}>
+                          {step.status.toUpperCase()}
+                        </Text>
+                      </View>
+                    </View>
+                    
+                    <View style={styles.stepContent}>
+                      <View style={styles.stepTitleRow}>
+                        <Ionicons 
+                          name={isVisit ? "location" : "home"} 
+                          size={16} 
+                          color={isVisit ? '#10B981' : '#3B82F6'} 
+                          style={styles.stepIcon}
+                        />
+                        <Text style={styles.stepTitle}>{step.title}</Text>
+                      </View>
+                      <Text style={styles.stepDescription}>{step.description}</Text>
+                    </View>
+                    
+                    {/* Visit Details */}
+                    {isVisit && step.reExaminationDate && (
+                      <View style={[
+                        styles.visitDetails,
+                        { backgroundColor: '#F0FDF4' }
+                      ]}>
+                        <View style={styles.visitDateTime}>
+                          <View style={styles.dateTimeBlock}>
+                            <Text style={[
+                              styles.dateTimeLabel,
+                              { color: '#047857' }
+                            ]}>DATE</Text>
+                            <Text style={styles.dateTimeValue}>
+                              {new Date(step.reExaminationDate).toLocaleDateString('en-US', { 
+                                weekday: 'short', 
+                                month: 'short', 
+                                day: 'numeric' 
+                              })}
+                            </Text>
+                          </View>
+                          <View style={styles.verticalDivider} />
+                          <View style={styles.dateTimeBlock}>
+                            <Text style={[
+                              styles.dateTimeLabel,
+                              { color: '#047857' }
+                            ]}>TIME</Text>
+                            <Text style={styles.dateTimeValue}>
+                              {new Date(step.reExaminationDate).toLocaleTimeString('en-US', { 
+                                hour: '2-digit', 
+                                minute: '2-digit' 
+                              })}
+                            </Text>
+                          </View>
+                        </View>
                         
-                        {/* Confirm Arrival Button (only show on appointment day) */}
-                        {step.status === 'scheduled' && 
-                         !step.arrivalConfirmed && 
-                         new Date(step.reExaminationDate!).toDateString() === new Date().toDateString() && (
-                          <Pressable
-                            style={styles.confirmArrivalButton}
-                            onPress={() => openConfirmArrivalModal(step)}
+                        {step.status === 'scheduled' && !step.arrivalConfirmed && (
+                          <TouchableOpacity
+                            style={[
+                              styles.arrivalButton,
+                              { backgroundColor: '#10B981' }
+                            ]}
+                            onPress={() => handleConfirmArrival(step.stepNumber)}
+                            activeOpacity={0.8}
                           >
-                            <LinearGradient colors={['#4CAF50', '#388E3C']} style={styles.confirmArrivalGradient}>
-                              <Ionicons name="checkmark-circle" size={18} color="#fff" />
-                              <Text style={styles.confirmArrivalText}>Confirm Arrival at Clinic</Text>
-                            </LinearGradient>
-                          </Pressable>
+                            <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
+                            <Text style={styles.arrivalButtonText}>Confirm Arrival</Text>
+                          </TouchableOpacity>
                         )}
                         
-                        {/* Already Confirmed Status */}
                         {step.arrivalConfirmed && (
-                          <View style={styles.arrivalConfirmedContainer}>
-                            <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
-                            <Text style={styles.arrivalConfirmedText}>
-                              Arrival confirmed at {step.arrivalConfirmedAt ? 
-                              new Date(step.arrivalConfirmedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 
-                              'N/A'}
-                            </Text>
+                          <View style={styles.confirmedContainer}>
+                            <Ionicons name="checkmark-done-circle" size={18} color="#10B981" />
+                            <Text style={[
+                              styles.confirmedText,
+                              { color: '#047857' }
+                            ]}>Checked In</Text>
                           </View>
                         )}
                       </View>
                     )}
                     
-                    {/* Medication Info */}
-                    {(step.medication || step.dosage || step.duration) && (
-                      <View style={styles.medicationInfo}>
-                        {step.medication && (
-                          <Text style={styles.medicationText}>
-                            <Ionicons name="medical" size={12} color="#666" />
-                            {' '}Medication: {step.medication}
-                          </Text>
-                        )}
-                        {step.dosage && (
-                          <Text style={styles.medicationText}>
-                            <Ionicons name="fitness" size={12} color="#666" />
-                            {' '}Dosage: {step.dosage}
-                          </Text>
-                        )}
-                        {step.duration && (
-                          <Text style={styles.medicationText}>
-                            <Ionicons name="time" size={12} color="#666" />
-                            {' '}Duration: {step.duration}
-                          </Text>
-                        )}
+                    {/* Medication Details */}
+                    {!isVisit && step.medication && (
+                      <View style={[
+                        styles.medicationDetails,
+                        { backgroundColor: '#F0F9FF' }
+                      ]}>
+                        <View style={styles.medicationHeader}>
+                          <Ionicons name="medical-outline" size={16} color="#1D4ED8" />
+                          <Text style={[
+                            styles.medicationTitle,
+                            { color: '#1D4ED8' }
+                          ]}>Medication Plan</Text>
+                        </View>
+                        <View style={styles.medicationRow}>
+                          <Ionicons name="medkit-outline" size={14} color="#475569" />
+                          <Text style={styles.medicationName}>{step.medication}</Text>
+                        </View>
+                        <View style={styles.dosageContainer}>
+                          <Ionicons name="time-outline" size={14} color="#475569" />
+                          <Text style={styles.dosageText}>{step.dosage}</Text>
+                        </View>
+                        <View style={styles.durationContainer}>
+                          <Ionicons name="calendar-outline" size={14} color="#475569" />
+                          <Text style={styles.durationText}>Duration: {step.duration}</Text>
+                        </View>
+                      </View>
+                    )}
+                    
+                    {/* Action Buttons */}
+                    {step.status === 'pending' && !isVisit && (
+                      <TouchableOpacity
+                        style={[
+                          styles.startButton,
+                          { backgroundColor: '#0EA5E9' }
+                        ]}
+                        onPress={() => handleActivateStep(step.stepNumber)}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons name="play-circle" size={18} color="#FFFFFF" />
+                        <Text style={styles.startButtonText}>Start This Phase</Text>
+                      </TouchableOpacity>
+                    )}
+                    
+                    {step.status === 'in-progress' && !isVisit && (
+                      <TouchableOpacity
+                        style={styles.reportButton}
+                        onPress={() => { 
+                          setSelectedStep(step); 
+                          setShowCompleteModal(true); 
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <LinearGradient
+                          colors={['#3B82F6', '#2563EB']}
+                          style={styles.reportButtonGradient}
+                        >
+                          <Ionicons name="document-text" size={18} color="#FFFFFF" />
+                          <Text style={styles.reportButtonText}>Report Progress</Text>
+                        </LinearGradient>
+                      </TouchableOpacity>
+                    )}
+                    
+                    {/* Doctor Notes */}
+                    {step.doctorNotes && (
+                      <View style={[
+                        styles.notesContainer,
+                        { backgroundColor: '#F8FAFC' }
+                      ]}>
+                        <View style={styles.notesHeader}>
+                          <Ionicons name="information-circle" size={16} color="#475569" />
+                          <Text style={[
+                            styles.notesTitle,
+                            { color: '#475569' }
+                          ]}>Doctor's Notes</Text>
+                        </View>
+                        <Text style={styles.notesText}>{step.doctorNotes}</Text>
                       </View>
                     )}
                   </View>
-                  <View style={[styles.statusBadge, { backgroundColor: statusConfig.bgColor }]}> 
-                    <Ionicons name={statusConfig.icon} size={14} color={statusConfig.color} />
-                    <Text style={[styles.statusBadgeText, { color: statusConfig.color }]}>
-                      {statusConfig.text}
-                    </Text>
-                  </View>
                 </View>
-
-                {/* Instructions */}
-                {step.instructions && (
-                  <View style={styles.instructionsContainer}>
-                    <Text style={styles.instructionsTitle}>Instructions:</Text>
-                    <Text style={styles.instructionsText}>{step.instructions}</Text>
-                  </View>
-                )}
-                
-                {/* Condition Description */}
-                {step.condition_description && (
-                   <View style={styles.conditionContainer}>
-                    <Text style={styles.conditionTitle}>Your Report:</Text>
-                    <Text style={styles.conditionText}>{step.condition_description}</Text>
-                  </View>
-                )}
-
-                {/* Doctor's Notes */}
-                {step.doctorNotes && (
-                   <View style={styles.doctorNotesContainer}>
-                    <Text style={styles.doctorNotesTitle}>
-                      {step.status === 'rejected' ? "Doctor's Feedback:" : "Doctor's Note:"}
-                    </Text>
-                    <Text style={styles.doctorNotesText}>{step.doctorNotes}</Text>
-                  </View>
-                )}
-
-                {/* Step Actions */}
-                {renderStepActions(step)}
               </View>
             );
           })}
         </View>
 
-        {treatmentPlan.length === 0 && (
-          <View style={styles.emptyContainer}>
-            <Ionicons name="information-circle-outline" size={40} color="#1976D2" />
-            <Text style={styles.emptyText}>No treatment steps defined yet.</Text>
-            <Text style={styles.emptySubtext}>
-              The doctor will add treatment steps soon.
-            </Text>
-          </View>
-        )}
-
-        <View style={styles.bottomSpacing} />
+        <View style={styles.bottomSpacer} />
       </ScrollView>
 
-      {/* Complete Step Modal */}
+      {/* Floating Action Button */}
+      <TouchableOpacity 
+        style={styles.floatingButton}
+        onPress={() => { 
+          setShowChatModal(true); 
+          loadMessages(); 
+        }}
+        activeOpacity={0.8}
+      >
+        <LinearGradient
+          colors={['#3B82F6', '#2563EB']}
+          style={styles.floatingButtonGradient}
+        >
+          <Ionicons name="chatbubble-ellipses" size={24} color="#FFFFFF" />
+        </LinearGradient>
+      </TouchableOpacity>
+
+      {/* Progress Report Modal */}
       <Modal
         visible={showCompleteModal}
-        transparent
-        animationType="none"
-        statusBarTranslucent
-        onRequestClose={closeCompleteModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowCompleteModal(false)}
       >
         <BlurView intensity={20} style={styles.modalOverlay}>
-          <Animated.View 
-            style={[
-              styles.modalContainer,
-              { transform: [{ translateY: completeModalAnim }] }
-            ]}
-          >
-            <View style={styles.modalContent}>
-              {/* Modal Header */}
-              <View style={styles.modalHeader}>
-                <View style={styles.modalTitleContainer}>
-                  <View style={styles.modalIcon}>
-                    <Ionicons name="chatbubble-ellipses" size={20} color="#1976D2" />
-                  </View>
-                  <View>
-                    <Text style={styles.modalTitle}>Complete Step {selectedStep?.stepNumber}</Text>
-                    <Text style={styles.modalSubtitle}>{selectedStep?.title}</Text>
-                  </View>
-                </View>
-                <TouchableOpacity 
-                  style={styles.modalCloseButton} 
-                  onPress={closeCompleteModal}
-                >
-                  <Ionicons name="close" size={20} color="#666" />
-                </TouchableOpacity>
-              </View>
-
-              {/* Step Description */}
-              <View style={styles.modalSection}>
-                <Text style={styles.modalSectionLabel}>Step Description:</Text>
-                <Text style={styles.modalSectionText}>
-                  {selectedStep?.description}
-                </Text>
-              </View>
-
-              {/* Health Condition Input */}
-              <View style={styles.modalSection}>
-                <Text style={styles.inputLabel}>
-                  <Ionicons name="heart" size={16} color="#F44336" />
-                  {' '}Health Condition After Treatment *
-                </Text>
-                <Text style={styles.inputHint}>
-                  Describe your current health condition after completing this step
-                </Text>
-                <TextInput
-                  style={styles.textArea}
-                  multiline
-                  numberOfLines={4}
-                  placeholder="Example: Pain has reduced, swelling is down..."
-                  placeholderTextColor="#999"
-                  value={conditionDescription}
-                  onChangeText={setConditionDescription}
-                  textAlignVertical="top"
-                />
-              </View>
-
-              {/* Optional Message */}
-              <View style={styles.modalSection}>
-                <Text style={styles.inputLabel}>
-                  <Ionicons name="document-text" size={16} color="#FF9800" />
-                  {' '}Additional Message (Optional)
-                </Text>
-                <TextInput
-                  style={styles.textArea}
-                  multiline
-                  numberOfLines={3}
-                  placeholder="Any additional information for the doctor..."
-                  placeholderTextColor="#999"
-                  value={patientMessage}
-                  onChangeText={setPatientMessage}
-                  textAlignVertical="top"
-                />
-              </View>
-
-              {/* Modal Actions */}
-              <View style={styles.modalActions}>
-                <Pressable
-                  style={styles.secondaryButton}
-                  onPress={closeCompleteModal}
-                >
-                  <Text style={styles.secondaryButtonText}>Cancel</Text>
-                </Pressable>
-                
-                <Pressable
-                  style={[
-                    styles.primaryButton,
-                    (!conditionDescription.trim() || loading) && styles.primaryButtonDisabled
-                  ]}
-                  onPress={handleCompleteStep}
-                  disabled={!conditionDescription.trim() || loading}
-                >
-                  {loading ? (
-                    <ActivityIndicator color="#fff" size="small" />
-                  ) : (
-                    <Text style={styles.primaryButtonText}>Submit to Doctor</Text>
-                  )}
-                </Pressable>
-              </View>
-            </View>
-          </Animated.View>
-        </BlurView>
-      </Modal>
-
-      {/* Request Approval Modal */}
-      <Modal
-        visible={showRequestModal}
-        transparent
-        animationType="none"
-        statusBarTranslucent
-        onRequestClose={closeRequestModal}
-      >
-        <BlurView intensity={20} style={styles.modalOverlay}>
-          <Animated.View 
-            style={[
-              styles.modalContainer,
-              { transform: [{ translateY: requestModalAnim }] }
-            ]}
+          <KeyboardAvoidingView 
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.modalContainer}
           >
             <View style={styles.modalContent}>
               <View style={styles.modalHeader}>
-                <View style={styles.modalTitleContainer}>
-                  <View style={styles.modalIcon}>
-                    <Ionicons name="notifications" size={20} color="#FF9800" />
-                  </View>
-                  <View>
-                    <Text style={styles.modalTitle}>Request Doctor Approval</Text>
-                    <Text style={styles.modalSubtitle}>Step {currentStep?.stepNumber}: {currentStep?.title}</Text>
-                  </View>
+                <View style={styles.modalHandle} />
+                <Text style={styles.modalTitle}>Daily Health Report</Text>
+                <Text style={styles.modalSubtitle}>
+                  Phase {selectedStep?.stepNumber}: {selectedStep?.title}
+                </Text>
+              </View>
+              
+              <ScrollView 
+                style={styles.modalForm}
+                showsVerticalScrollIndicator={false}
+              >
+                <View style={styles.formGroup}>
+                  <Text style={styles.formLabel}>
+                    How are you feeling today? *
+                  </Text>
+                  <TextInput
+                    style={[styles.textInput, styles.textArea]}
+                    placeholder="Describe your current symptoms, side effects, or improvements..."
+                    placeholderTextColor="#94A3B8"
+                    multiline
+                    numberOfLines={4}
+                    value={conditionDesc}
+                    onChangeText={setConditionDesc}
+                  />
                 </View>
-                <TouchableOpacity style={styles.modalCloseButton} onPress={closeRequestModal}>
-                  <Ionicons name="close" size={20} color="#666" />
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.modalSection}>
-                <Text style={styles.modalSectionLabel}>Step Description:</Text>
-                <Text style={styles.modalSectionText}>{currentStep?.description}</Text>
-              </View>
-
-              <View style={styles.modalSection}>
-                <Text style={styles.inputLabel}>
-                  <Ionicons name="chatbubble-outline" size={16} color="#FF9800" />
-                  {' '}Message to Doctor
-                </Text>
-                <TextInput
-                  style={styles.textArea}
-                  multiline
-                  numberOfLines={4}
-                  placeholder="Let the doctor know about your progress..."
-                  placeholderTextColor="#999"
-                  value={requestMessage}
-                  onChangeText={setRequestMessage}
-                  textAlignVertical="top"
-                />
-              </View>
-
-              <View style={styles.modalActions}>
-                <Pressable
-                  style={styles.secondaryButton}
-                  onPress={closeRequestModal}
-                >
-                  <Text style={styles.secondaryButtonText}>Cancel</Text>
-                </Pressable>
                 
-                <Pressable
-                  style={styles.primaryButton}
-                  onPress={handleSendApprovalRequest}
-                  disabled={loading}
-                >
-                  {loading ? (
-                    <ActivityIndicator color="#fff" size="small" />
-                  ) : (
-                    <Text style={styles.primaryButtonText}>Send Request</Text>
-                  )}
-                </Pressable>
-              </View>
-            </View>
-          </Animated.View>
-        </BlurView>
-      </Modal>
-
-      {/* Confirm Arrival Modal */}
-      <Modal
-        visible={showConfirmArrivalModal}
-        transparent
-        animationType="none"
-        statusBarTranslucent
-        onRequestClose={closeConfirmArrivalModal}
-      >
-        <BlurView intensity={20} style={styles.modalOverlay}>
-          <Animated.View 
-            style={[
-              styles.modalContainer,
-              { transform: [{ translateY: confirmArrivalAnim }] }
-            ]}
-          >
-            <View style={styles.modalContent}>
-              <View style={styles.modalHeader}>
-                <View style={styles.modalTitleContainer}>
-                  <View style={styles.modalIcon}>
-                    <Ionicons name="checkmark-circle" size={20} color="#4CAF50" />
-                  </View>
-                  <View>
-                    <Text style={styles.modalTitle}>Confirm Clinic Arrival</Text>
-                    <Text style={styles.modalSubtitle}>Step {arrivalStep?.stepNumber}: {arrivalStep?.title}</Text>
-                  </View>
+                <View style={styles.formGroup}>
+                  <Text style={styles.formLabel}>
+                    Additional Notes (Optional)
+                  </Text>
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="Any questions or concerns for your doctor?"
+                    placeholderTextColor="#94A3B8"
+                    value={patientMsg}
+                    onChangeText={setPatientMsg}
+                  />
                 </View>
-                <TouchableOpacity style={styles.modalCloseButton} onPress={closeConfirmArrivalModal}>
-                  <Ionicons name="close" size={20} color="#666" />
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.modalSection}>
-                <Text style={styles.modalSectionLabel}>Appointment Details:</Text>
-                <Text style={styles.modalSectionText}>
-                  {arrivalStep?.reExaminationDate && (
-                    <>
-                      {new Date(arrivalStep.reExaminationDate).toLocaleDateString('en-US', { 
-                        weekday: 'long', 
-                        year: 'numeric', 
-                        month: 'long', 
-                        day: 'numeric' 
-                      })}
-                      {' at '}
-                      {new Date(arrivalStep.reExaminationDate).toLocaleTimeString([], { 
-                        hour: '2-digit', 
-                        minute: '2-digit' 
-                      })}
-                    </>
-                  )}
-                </Text>
-              </View>
-
-              <View style={styles.modalSection}>
-                <Text style={styles.inputLabel}>
-                  <Ionicons name="information-circle" size={16} color="#2196F3" />
-                  {' '}Important Notice
-                </Text>
-                <Text style={styles.inputHint}>
-                  By confirming your arrival, you acknowledge that you are physically present at the clinic for your scheduled re-examination. The doctor will be notified and will begin your physical assessment shortly.
-                </Text>
-              </View>
-
-              <View style={styles.modalActions}>
-                <Pressable
-                  style={styles.secondaryButton}
-                  onPress={closeConfirmArrivalModal}
-                >
-                  <Text style={styles.secondaryButtonText}>Cancel</Text>
-                </Pressable>
                 
-                <Pressable
-                  style={styles.primaryButton}
-                  onPress={handleConfirmArrival}
-                  disabled={loading}
-                >
-                  {loading ? (
-                    <ActivityIndicator color="#fff" size="small" />
-                  ) : (
-                    <>
-                      <Ionicons name="checkmark-circle" size={18} color="#fff" />
-                      <Text style={styles.primaryButtonText}>Confirm Arrival</Text>
-                    </>
-                  )}
-                </Pressable>
-              </View>
+                <View style={styles.modalActions}>
+                  <TouchableOpacity
+                    style={[
+                      styles.submitButton,
+                      (!conditionDesc.trim() || loading) && styles.submitButtonDisabled
+                    ]}
+                    onPress={handleCompleteStep}
+                    disabled={!conditionDesc.trim() || loading}
+                    activeOpacity={0.8}
+                  >
+                    {loading ? (
+                      <ActivityIndicator color="#FFFFFF" />
+                    ) : (
+                      <>
+                        <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+                        <Text style={styles.submitButtonText}>Submit Report</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={styles.cancelButton}
+                    onPress={() => setShowCompleteModal(false)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.cancelButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
             </View>
-          </Animated.View>
+          </KeyboardAvoidingView>
         </BlurView>
       </Modal>
 
       {/* Chat Modal */}
-      {userRole === 'patient' && (
-        <Modal
-          visible={showChatModal}
-          transparent
-          animationType="none"
-          statusBarTranslucent
-          onRequestClose={closeChatModal}
-        >
-          <BlurView intensity={20} style={styles.modalOverlay}>
-            <Animated.View 
-              style={[
-                styles.chatModalContainer,
-                { transform: [{ translateY: chatModalAnim }] }
-              ]}
-            >
-              <View style={styles.chatModalContent}>
-                {/* Chat Header */}
-                <View style={styles.chatHeader}>
-                  <View style={styles.chatDoctorInfo}>
-                    <View style={styles.chatAvatarContainer}>
-                      {record.doctor_id?.avatar && shouldShowAvatar(record.doctor_id.avatar) ? (
-                        <Image 
-                          source={{ uri: getDoctorAvatarUrl(record.doctor_id.avatar) }}
-                          style={styles.chatAvatar}
-                        />
-                      ) : (
-                        <View style={styles.chatAvatarPlaceholder}>
-                          <Text style={styles.chatAvatarText}>
-                            {record.doctor_id?.name?.charAt(0) || 'D'}
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                    <View>
-                      <Text style={styles.chatDoctorName}>
-                        Dr. {record.doctor_id?.name || 'Doctor'}
-                      </Text>
-                      <Text style={styles.chatStatus}>Online</Text>
-                    </View>
-                  </View>
-                  <TouchableOpacity 
-                    style={styles.chatCloseButton}
-                    onPress={closeChatModal}
-                  >
-                    <Ionicons name="close" size={24} color="#666" />
-                  </TouchableOpacity>
-                </View>
-
-                {/* Messages List */}
-                <View style={styles.messagesContainer}>
-                  {chatLoading ? (
-                    <View style={styles.chatLoadingContainer}>
-                      <ActivityIndicator size="large" color="#1976D2" />
-                      <Text style={styles.chatLoadingText}>Loading messages...</Text>
-                    </View>
-                  ) : (
-                    <FlatList
-                      ref={flatListRef}
-                      data={messages}
-                      renderItem={renderMessageItem}
-                      keyExtractor={(item) => item._id || item.timestamp.toString()}
-                      showsVerticalScrollIndicator={false}
-                      contentContainerStyle={styles.messagesList}
-                    />
-                  )}
-                </View>
-
-                {/* Message Input */}
-                <KeyboardAvoidingView 
-                  behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                  style={styles.messageInputContainer}
+      <Modal
+        visible={showChatModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowChatModal(false)}
+      >
+        <View style={styles.chatModalOverlay}>
+          <View style={styles.chatContainer}>
+            {/* Chat Header */}
+            <View style={styles.chatHeader}>
+              <View style={styles.chatDoctorInfo}>
+                <LinearGradient
+                  colors={['#3B82F6', '#2563EB']}
+                  style={styles.chatDoctorAvatar}
                 >
-                  <View style={styles.inputWrapper}>
-                    <TextInput
-                      style={styles.messageInput}
-                      placeholder="Type your message..."
-                      placeholderTextColor="#999"
-                      value={newMessage}
-                      onChangeText={setNewMessage}
-                      multiline
-                      maxLength={500}
-                    />
-                    <Pressable
-                      style={[
-                        styles.sendButton,
-                        (!newMessage.trim() || sendingMessage) && styles.sendButtonDisabled
-                      ]}
-                      onPress={sendMessage}
-                      disabled={!newMessage.trim() || sendingMessage}
-                    >
-                      {sendingMessage ? (
-                        <ActivityIndicator size="small" color="#fff" />
-                      ) : (
-                        <Ionicons name="send" size={20} color="#fff" />
-                      )}
-                    </Pressable>
+                  <Text style={styles.chatAvatarText}>
+                    {record.doctor_id.name.charAt(0)}
+                  </Text>
+                </LinearGradient>
+                <View>
+                  <Text style={styles.chatDoctorName}>
+                    Dr. {record.doctor_id.name}
+                  </Text>
+                  <View style={styles.chatStatus}>
+                    <View style={styles.activeStatusDot} />
+                    <Text style={styles.chatStatusText}>Online</Text>
                   </View>
-                </KeyboardAvoidingView>
+                </View>
               </View>
-            </Animated.View>
-          </BlurView>
-        </Modal>
-      )}
+              <TouchableOpacity
+                style={styles.closeChatButton}
+                onPress={() => setShowChatModal(false)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="close" size={24} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+            
+            {/* Messages List */}
+            <FlatList
+              data={messages}
+              keyExtractor={(item, index) => item._id || index.toString()}
+              contentContainerStyle={styles.messagesList}
+              showsVerticalScrollIndicator={false}
+              renderItem={({ item }) => (
+                <View style={[
+                  styles.messageBubble,
+                  item.sender_id === record.user_id._id 
+                    ? styles.myMessageBubble 
+                    : styles.theirMessageBubble
+                ]}>
+                  <Text style={[
+                    styles.messageText,
+                    item.sender_id === record.user_id._id 
+                      ? styles.myMessageText 
+                      : styles.theirMessageText
+                  ]}>
+                    {item.message}
+                  </Text>
+                  <Text style={styles.messageTime}>
+                    {new Date(item.timestamp).toLocaleTimeString([], { 
+                      hour: '2-digit', 
+                      minute: '2-digit' 
+                    })}
+                  </Text>
+                </View>
+              )}
+              ListEmptyComponent={
+                <View style={styles.emptyChat}>
+                  <Ionicons name="chatbubbles-outline" size={60} color="#CBD5E1" />
+                  <Text style={styles.emptyChatTitle}>Start Conversation</Text>
+                  <Text style={styles.emptyChatText}>
+                    Send your first message to Dr. {record.doctor_id.name}
+                  </Text>
+                </View>
+              }
+            />
+            
+            {/* Message Input */}
+            <View style={styles.messageInputContainer}>
+              <TextInput
+                style={styles.messageInput}
+                placeholder="Type your message..."
+                placeholderTextColor="#94A3B8"
+                value={newMessage}
+                onChangeText={setNewMessage}
+                multiline
+              />
+              <TouchableOpacity
+                style={[
+                  styles.sendButton,
+                  !newMessage.trim() && styles.sendButtonDisabled
+                ]}
+                onPress={sendChatMessage}
+                disabled={!newMessage.trim()}
+                activeOpacity={0.8}
+              >
+                <Ionicons 
+                  name="send" 
+                  size={20} 
+                  color={newMessage.trim() ? "#FFFFFF" : "#CBD5E1"} 
+                />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -1543,722 +864,726 @@ const RecordDetail: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F7FA',
+    backgroundColor: '#FFFFFF',
   },
-  header: {
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
-    paddingBottom: 20,
-  },
-  headerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 10,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 15,
-  },
-  headerTextContainer: {
-    flex: 1,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#fff',
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.8)',
-    marginTop: 2,
-  },
-  refreshButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  progressBarContainer: {
-    height: 4,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    marginHorizontal: 20,
-    marginTop: 15,
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  progressBar: {
-    height: '100%',
-    borderRadius: 2,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  doctorCard: {
-    margin: 20,
-    marginTop: -10,
-    backgroundColor: '#fff',
-    borderRadius: 16,
+  
+  // Header Styles
+  headerGradient: {
+    paddingTop: Platform.OS === 'ios' ? 10 : StatusBar.currentHeight,
+    paddingBottom: 24,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.05,
     shadowRadius: 12,
     elevation: 4,
   },
-  cardContent: {
-    padding: 20,
-  },
-  doctorHeader: {
+  header: {
     flexDirection: 'row',
-    marginBottom: 16,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    marginBottom: 20,
   },
-  avatarContainer: {
-    marginRight: 15,
-  },
-  doctorAvatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    borderWidth: 2,
-    borderColor: '#fff',
-  },
-  avatarPlaceholder: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#E0E0E0',
+  backButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#fff',
   },
-  avatarText: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#666',
-  },
-  doctorInfo: {
+  headerCenter: {
     flex: 1,
+    alignItems: 'center',
   },
-  doctorName: {
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 4,
+  },
+  recordId: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '600',
+    letterSpacing: 1,
+  },
+  refreshButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  
+  // Progress Section
+  progressSection: {
+    paddingHorizontal: 24,
+  },
+  progressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  progressLabel: {
+    fontSize: 14,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  progressPercentage: {
     fontSize: 18,
-    fontWeight: '700',
-    color: '#1A1A1A',
-    marginBottom: 4,
+    fontWeight: '800',
+    color: '#2563EB',
   },
-  doctorMeta: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 6,
+  progressBarContainer: {
+    marginBottom: 8,
   },
-  diagnosis: {
-    fontSize: 12,
-    color: '#999',
-  },
-  statusContainer: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginBottom: 16,
-  },
-  severityChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    marginRight: 8,
-  },
-  severityText: {
-    fontSize: 12,
-    fontWeight: '600',
-    marginLeft: 4,
-  },
-  statusChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '600',
-    marginLeft: 4,
-  },
-  chatButton: {
-    borderRadius: 12,
+  progressBarBackground: {
+    height: 6,
+    backgroundColor: '#E2E8F0',
+    borderRadius: 3,
     overflow: 'hidden',
   },
-  chatButtonGradient: {
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: '#2563EB',
+    borderRadius: 3,
+  },
+  progressSteps: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  stepDotContainer: {
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
   },
-  chatButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    marginHorizontal: 20,
-    marginBottom: 20,
-    gap: 12,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  statNumber: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1A1A1A',
+  stepDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
     marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#666',
-    fontWeight: '500',
-  },
-  infoSection: {
-    marginHorizontal: 20,
-    marginBottom: 20,
-    gap: 16,
-  },
-  infoCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  infoHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  infoIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#E3F2FD',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  infoTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1A1A1A',
-  },
-  infoContent: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: '#444',
-  },
-  actionSection: {
-    marginHorizontal: 20,
-    marginBottom: 20,
-  },
-  startTreatmentButton: {
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  startButtonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-  },
-  startButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  treatmentSection: {
-    marginHorizontal: 20,
-    marginBottom: 20,
-  },
-  sectionHeader: {
-    marginBottom: 20,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1A1A1A',
-    marginBottom: 4,
-  },
-  sectionSubtitle: {
-    fontSize: 14,
-    color: '#666',
-    lineHeight: 20,
-  },
-  stepCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    borderLeftWidth: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  stepHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 12,
   },
   stepNumber: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  stepNumberText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  stepInfo: {
-    flex: 1,
-    marginRight: 12,
-  },
-  stepTitle: {
-    fontSize: 16,
+    fontSize: 10,
+    color: '#94A3B8',
     fontWeight: '600',
-    color: '#1A1A1A',
-    marginBottom: 4,
   },
-  stepDescription: {
-    fontSize: 14,
-    color: '#666',
-    lineHeight: 20,
-    marginBottom: 8,
+  
+  // Scroll Content
+  scrollContent: {
+    paddingBottom: 100,
   },
-  physicalVisitBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFEBEE',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    alignSelf: 'flex-start',
-    marginBottom: 8,
-  },
-  physicalVisitText: {
-    fontSize: 11,
-    color: '#D32F2F',
-    fontWeight: '600',
-    marginLeft: 4,
-  },
-  scheduledAppointmentContainer: {
-    backgroundColor: '#E3F2FD',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#BBDEFB'
-  },
-  appointmentDateTimeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8
-  },
-  appointmentDateTime: {
-    marginLeft: 8,
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1976D2'
-  },
-  confirmArrivalButton: {
-    borderRadius: 8,
-    overflow: 'hidden',
-    marginTop: 8
-  },
-  confirmArrivalGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 16
-  },
-  confirmArrivalText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-    marginLeft: 8
-  },
-  arrivalConfirmedContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8
-  },
-  arrivalConfirmedText: {
-    marginLeft: 8,
-    fontSize: 14,
-    color: '#4CAF50',
-    fontWeight: '600'
-  },
-  medicationInfo: {
-    marginTop: 8,
-  },
-  medicationText: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 2,
-  },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 16,
-  },
-  statusBadgeText: {
-    fontSize: 12,
-    fontWeight: '600',
-    marginLeft: 4,
-  },
-  instructionsContainer: {
-    backgroundColor: '#F8F9FA',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-  },
-  instructionsTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1976D2',
-    marginBottom: 4,
-  },
-  instructionsText: {
-    fontSize: 14,
-    color: '#444',
-    lineHeight: 20,
-    fontStyle: 'italic',
-  },
-  conditionContainer: {
-    backgroundColor: '#E3F2FD',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-  },
-  conditionTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#2196F3',
-    marginBottom: 4,
-  },
-  conditionText: {
-    fontSize: 14,
-    color: '#444',
-    lineHeight: 20,
-  },
-  doctorNotesContainer: {
-    backgroundColor: '#E8F5E8',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-  },
-  doctorNotesTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#4CAF50',
-    marginBottom: 4,
-  },
-  doctorNotesText: {
-    fontSize: 14,
-    color: '#444',
-    lineHeight: 20,
-    fontStyle: 'italic',
-  },
-  actionButton: {
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  actionButtonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-  },
-  actionButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  requestApprovalButton: {
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  loadingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-  },
-  loadingText: {
-    marginLeft: 8,
-    color: '#666',
-    fontSize: 14,
-  },
-  pendingApprovalContainer: {
-    marginTop: 4,
-  },
-  pendingApprovalBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFF3E0',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  pendingApprovalText: {
-    fontSize: 12,
-    color: '#FF9800',
-    fontWeight: '600',
-    marginLeft: 4,
-  },
-  conditionDescriptionText: {
-    fontSize: 11,
-    color: '#FF9800',
-    fontStyle: 'italic',
-    marginTop: 4,
-    paddingLeft: 6,
-  },
-  completedContainer: {
-    marginTop: 8,
-  },
-  completedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#E8F5E8',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  completedText: {
-    fontSize: 12,
-    color: '#4CAF50',
-    fontWeight: '600',
-    marginLeft: 4,
-  },
-  rejectedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFEBEE',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  rejectedText: {
-    fontSize: 12,
-    color: '#D32F2F',
-    fontWeight: '600',
-    marginLeft: 4,
-  },
-  doctorNotesText: {
-    fontSize: 11,
-    color: '#4CAF50',
-    fontStyle: 'italic',
-    marginTop: 4,
-    paddingLeft: 6,
-  },
-  rejectionReasonText: {
-    fontSize: 11,
-    color: '#D32F2F',
-    fontStyle: 'italic',
-    marginTop: 4,
-    paddingLeft: 6,
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    marginTop: 40,
-    paddingHorizontal: 20,
-  },
-  emptyText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1976D2',
-    marginTop: 12,
-    marginBottom: 4,
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  bottomSpacing: {
-    height: 40,
-  },
-  modalOverlay: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.2)',
-    paddingHorizontal: 20,
-  },
-  modalContainer: {
-    width: '100%',
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    overflow: 'hidden',
+  
+  // Doctor Card
+  doctorCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 24,
+    marginHorizontal: 20,
+    marginTop: -20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.08,
     shadowRadius: 16,
-    elevation: 10,
+    elevation: 8,
   },
-  modalContent: {
-    padding: 20,
-  },
-  modalHeader: {
+  doctorCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 20,
   },
-  modalTitleContainer: {
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  chatButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    flex: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#F0F9FF',
+    borderRadius: 12,
+    gap: 6,
   },
-  modalIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#E3F2FD',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1A1A1A',
-  },
-  modalSubtitle: {
+  chatButtonText: {
     fontSize: 14,
-    color: '#666',
-    marginTop: 2,
+    fontWeight: '600',
+    color: '#3B82F6',
   },
-  modalCloseButton: {
-    padding: 8,
-  },
-  modalSection: {
+  doctorInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 20,
   },
-  modalSectionLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1976D2',
+  avatarContainer: {
+    position: 'relative',
+  },
+  doctorAvatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarText: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  onlineIndicator: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#10B981',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+  },
+  doctorDetails: {
+    flex: 1,
+    marginLeft: 16,
+  },
+  doctorName: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#1E293B',
     marginBottom: 4,
   },
-  modalSectionText: {
+  doctorSpecialty: {
     fontSize: 14,
-    color: '#444',
-    lineHeight: 20,
-  },
-  inputLabel: {
-    fontSize: 14,
+    color: '#64748B',
     fontWeight: '600',
-    color: '#1A1A1A',
-    marginBottom: 6,
-  },
-  inputHint: {
-    fontSize: 12,
-    color: '#666',
     marginBottom: 8,
-    fontStyle: 'italic',
-    lineHeight: 18,
   },
-  textArea: {
-    backgroundColor: '#F8F9FA',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 14,
-    color: '#1A1A1A',
-    minHeight: 80,
-    textAlignVertical: 'top',
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-  },
-  modalActions: {
+  ratingContainer: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 12,
+    alignItems: 'center',
+    gap: 4,
   },
-  secondaryButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    backgroundColor: '#E0E0E0',
-  },
-  secondaryButtonText: {
-    fontSize: 14,
+  ratingText: {
+    fontSize: 12,
+    color: '#64748B',
     fontWeight: '600',
-    color: '#666',
   },
-  primaryButton: {
-    paddingVertical: 10,
+  diagnosisContainer: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
+    padding: 16,
+  },
+  diagnosisHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 8,
+  },
+  diagnosisTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  diagnosisText: {
+    fontSize: 16,
+    color: '#1E293B',
+    fontWeight: '600',
+    marginBottom: 12,
+    lineHeight: 24,
+  },
+  severityBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  severityText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#92400E',
+  },
+  
+  // Timeline
+  timelineContainer: {
     paddingHorizontal: 20,
-    borderRadius: 8,
-    backgroundColor: '#1976D2',
+    marginTop: 30,
+  },
+  timelineHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  timelineTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  timelineLegend: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  legendColor: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  legendText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  timelineItem: {
+    marginBottom: 32,
+    position: 'relative',
+  },
+  timelineConnector: {
+    position: 'absolute',
+    left: 32,
+    top: -32,
+    width: 2,
+    height: 32,
+    backgroundColor: '#E2E8F0',
+  },
+  timelineNodeContainer: {
+    position: 'absolute',
+    left: 20,
+    top: 0,
+    zIndex: 2,
+  },
+  timelineNode: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 3,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  
+  // Step Card
+  stepCard: {
+    marginLeft: 56,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  activeStepCard: {
+    borderColor: '#DBEAFE',
+    borderWidth: 2,
+  },
+  cardLeftBorder: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
+    borderTopLeftRadius: 20,
+    borderBottomLeftRadius: 20,
+  },
+  cardContent: {
+    padding: 20,
+    marginLeft: 4,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+  },
+  headerLeft: {
+    flex: 1,
+    marginRight: 12,
+  },
+  stepTypeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    marginBottom: 8,
+    gap: 6,
+  },
+  stepTypeText: {
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.3,
+  },
+  stepNumberContainer: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+  },
+  stepNumberText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#64748B',
+  },
+  statusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+  },
+  statusText: {
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  stepContent: {
+    marginBottom: 20,
+  },
+  stepTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 8,
+  },
+  stepIcon: {
+    marginTop: 2,
+  },
+  stepTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#1E293B',
+    flex: 1,
+  },
+  stepDescription: {
+    fontSize: 14,
+    color: '#64748B',
+    lineHeight: 22,
+  },
+  
+  // Visit Details
+  visitDetails: {
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+  },
+  visitDateTime: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#D1FAE5',
+  },
+  dateTimeBlock: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  dateTimeLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    marginBottom: 4,
+    letterSpacing: 1,
+  },
+  dateTimeValue: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#064E3B',
+  },
+  verticalDivider: {
+    width: 1,
+    height: '100%',
+    backgroundColor: '#F1F5F9',
+  },
+  arrivalButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    borderRadius: 12,
+    gap: 8,
+  },
+  arrivalButtonText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  confirmedContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    padding: 12,
+  },
+  confirmedText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  
+  // Medication Details
+  medicationDetails: {
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#E0F2FE',
+  },
+  medicationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 8,
+  },
+  medicationTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  medicationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  medicationName: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#334155',
+  },
+  dosageContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  dosageText: {
+    fontSize: 14,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  durationContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-  primaryButtonDisabled: {
-    opacity: 0.6,
-  },
-  primaryButtonText: {
-    fontSize: 14,
+  durationText: {
+    fontSize: 13,
+    color: '#64748B',
     fontWeight: '600',
-    color: '#fff',
   },
-  chatModalContainer: {
-    width: '100%',
-    height: '80%',
-    backgroundColor: '#fff',
-    borderRadius: 16,
+  
+  // Action Buttons
+  startButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    borderRadius: 12,
+    gap: 8,
+    marginBottom: 16,
+  },
+  startButtonText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  reportButton: {
+    borderRadius: 12,
     overflow: 'hidden',
+    marginBottom: 16,
+  },
+  reportButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    gap: 8,
+  },
+  reportButtonText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  
+  // Notes Container
+  notesContainer: {
+    borderRadius: 12,
+    padding: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#CBD5E1',
+  },
+  notesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 8,
+  },
+  notesTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  notesText: {
+    fontSize: 14,
+    color: '#1E293B',
+    fontStyle: 'italic',
+    lineHeight: 22,
+  },
+  
+  // Bottom Spacer
+  bottomSpacer: {
+    height: 100,
+  },
+  
+  // Floating Button
+  floatingButton: {
+    position: 'absolute',
+    bottom: 30,
+    right: 24,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.2,
     shadowRadius: 16,
     elevation: 10,
   },
-  chatModalContent: {
+  floatingButtonGradient: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  
+  // Modal Styles
+  modalOverlay: {
     flex: 1,
+    justifyContent: 'flex-end',
+  },
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    maxHeight: '85%',
+  },
+  modalHeader: {
+    padding: 28,
+    paddingBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  modalHandle: {
+    width: 40,
+    height: 5,
+    backgroundColor: '#E2E8F0',
+    borderRadius: 3,
+    alignSelf: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#1E293B',
+    marginBottom: 8,
+  },
+  modalSubtitle: {
+    fontSize: 15,
+    color: '#64748B',
+  },
+  modalForm: {
+    padding: 28,
+  },
+  formGroup: {
+    marginBottom: 24,
+  },
+  formLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#475569',
+    marginBottom: 12,
+  },
+  textInput: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
+    padding: 16,
+    fontSize: 16,
+    color: '#1E293B',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  textArea: {
+    height: 120,
+    textAlignVertical: 'top',
+  },
+  modalActions: {
+    marginTop: 8,
+  },
+  submitButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2563EB',
+    padding: 18,
+    borderRadius: 16,
+    gap: 10,
+    marginBottom: 16,
+  },
+  submitButtonDisabled: {
+    opacity: 0.6,
+  },
+  submitButtonText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  cancelButton: {
+    padding: 16,
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#94A3B8',
+  },
+  
+  // Chat Modal
+  chatModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  chatContainer: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    marginTop: 60,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    overflow: 'hidden',
   },
   chatHeader: {
     flexDirection: 'row',
@@ -2266,144 +1591,140 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: '#F1F5F9',
   },
   chatDoctorInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    flex: 1,
+    gap: 16,
   },
-  chatAvatarContainer: {
-    marginRight: 12,
-  },
-  chatAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    borderWidth: 2,
-    borderColor: '#1976D2',
-  },
-  chatAvatarPlaceholder: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#E0E0E0',
+  chatDoctorAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#1976D2',
   },
   chatAvatarText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#666',
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
   chatDoctorName: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#1A1A1A',
-    marginBottom: 2,
+    fontWeight: '800',
+    color: '#1E293B',
   },
   chatStatus: {
-    fontSize: 12,
-    color: '#666',
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+    gap: 6,
   },
-  chatCloseButton: {
+  activeStatusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#10B981',
+  },
+  chatStatusText: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  closeChatButton: {
     padding: 8,
   },
-  messagesContainer: {
-    flex: 1,
-    backgroundColor: '#f8f9fa',
-  },
-  chatLoadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  chatLoadingText: {
-    marginTop: 12,
-    color: '#666',
-    fontSize: 14,
-  },
+  
+  // Messages
   messagesList: {
-    padding: 16,
-    paddingBottom: 8,
-  },
-  messageContainer: {
-    marginBottom: 12,
-  },
-  patientMessage: {
-    alignItems: 'flex-end',
-  },
-  doctorMessage: {
-    alignItems: 'flex-start',
+    padding: 20,
+    paddingBottom: 100,
   },
   messageBubble: {
     maxWidth: '80%',
-    padding: 12,
-    borderRadius: 16,
+    marginBottom: 16,
+    padding: 16,
+    borderRadius: 20,
   },
-  patientBubble: {
-    backgroundColor: '#1976D2',
+  myMessageBubble: {
+    alignSelf: 'flex-end',
+    backgroundColor: '#2563EB',
+    borderBottomRightRadius: 4,
   },
-  doctorBubble: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#f0f0f0',
+  theirMessageBubble: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#F1F5F9',
+    borderBottomLeftRadius: 4,
   },
   messageText: {
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 16,
+    lineHeight: 24,
+    marginBottom: 4,
   },
-  doctorMessageText: {
-    color: '#1A1A1A',
+  myMessageText: {
+    color: '#FFFFFF',
   },
-  patientMessageText: {
-    color: '#fff',
+  theirMessageText: {
+    color: '#1E293B',
   },
   messageTime: {
     fontSize: 11,
-    marginTop: 4,
-    alignSelf: 'flex-end',
+    opacity: 0.7,
   },
-  doctorMessageTime: {
-    color: '#666',
+  emptyChat: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
   },
-  patientMessageTime: {
-    color: '#fff',
+  emptyChatTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginTop: 16,
+    marginBottom: 8,
   },
+  emptyChatText: {
+    fontSize: 15,
+    color: '#64748B',
+    textAlign: 'center',
+    paddingHorizontal: 40,
+  },
+  
+  // Message Input
   messageInputContainer: {
-    padding: 16,
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#FFFFFF',
+    padding: 20,
     borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-    backgroundColor: '#fff',
-  },
-  inputWrapper: {
+    borderTopColor: '#F1F5F9',
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
+    gap: 12,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 20,
   },
   messageInput: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 14,
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 20,
+    borderRadius: 25,
+    fontSize: 16,
     maxHeight: 100,
-    marginRight: 12,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
+    paddingVertical: 12,
   },
   sendButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#1976D2',
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#2563EB',
     justifyContent: 'center',
     alignItems: 'center',
   },
   sendButtonDisabled: {
-    backgroundColor: '#ccc',
+    backgroundColor: '#F1F5F9',
   },
 });
 

@@ -76,9 +76,7 @@ const LoginScreen = () => {
 
     setIsLoading(true);
     try {
-      // Use actual server IP address instead of localhost
-      // For Android devices, you may need to use 10.0.2.2 instead of localhost
-      const API_BASE_URL = 'http://localhost:3000'; // Replace with your server IP
+      const API_BASE_URL = 'http://localhost:3000';
       
       const response = await axios.post(`${API_BASE_URL}/api/auth/login`, {
         email: email.toLowerCase().trim(),
@@ -103,9 +101,6 @@ const LoginScreen = () => {
         ['userRole', role || 'patient'],
         ['userData', JSON.stringify(data)]
       ]);
-
-      console.log('Login successful, role:', role);
-
       Alert.alert('🎉 Login Successful', `Welcome back, ${name}!`);
       
       // Navigate based on role
