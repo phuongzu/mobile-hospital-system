@@ -1,4 +1,14 @@
 
+export enum StepStatus {
+  PENDING = 'pending',
+  IN_PROGRESS = 'in-progress',
+  COMPLETED = 'completed',
+  APPROVED = 'approved',
+  REJECTED = 'rejected',
+  SCHEDULED = 'scheduled',
+  MISSED = 'missed'
+}
+
 export interface Medication {
   name: string;
   dosage: string;
@@ -18,31 +28,76 @@ export interface VitalSign {
 }
 
 export interface TreatmentStep {
+  _id?: string;
   stepNumber: number;
   title: string;
   description: string;
-  // Added medication property to match usage in RecordDetail.tsx
-  medication?: string;
-  medications?: Medication[];
+  medication?: string; // String for simple display
+  medications?: Medication[]; // Array for complex plans
   dosage?: string;
   duration?: string;
   instructions?: string;
-  status: 'pending' | 'in-progress' | 'scheduled' | 'completed' | 'approved' | 'rejected' | 'missed';
-  completedAt?: Date | string;
-  startedAt?: Date | string;
+  status: StepStatus;
+  isPhysicalVisit: boolean;
+  createdAt?: string;
+  reExaminationDate?: string;
+  reExaminationAppointmentId?: string;
+  arrivalConfirmed?: boolean;
+  arrivalConfirmedAt?: string;
+  doctorNotes?: string;
+  startedAt?: string;
+  completedAt?: string;
+  approvedAt?: string;
   patient_message?: string;
   condition_description?: string;
-  doctorNotes?: string;
-  approval_requested?: boolean;
-  isPhysicalVisit?: boolean;
-  reExaminationScheduled?: boolean;
-  reExaminationDate?: Date | string;
-  arrivalConfirmed?: boolean;
-  arrivalConfirmedAt?: Date | string;
   rejectionReason?: string;
   clinicAddress?: string;
   requiredDocuments?: string[];
+}
+
+export interface Doctor {
+  _id: string;
+  name: string;
+  title?: string;
+  specialty_id: {
+    name: string;
+  };
+  avatar?: string;
+  rating?: number;
+}
+
+export interface Patient {
+  _id: string;
+  name: string;
+  avatar?: string;
+  age?: number;
+  bloodType?: string;
+}
+
+export interface MedicalRecord {
+  _id: string;
+  diagnosis: string;
+  diagnosisDetail?: string;
+  severity: 'mild' | 'moderate' | 'severe' | 'critical';
+  created_at: string;
+  updated_at: string;
+  doctor_id: Doctor;
+  user_id: Patient;
+  treatment_plan: TreatmentStep[];
+  vitals?: VitalSign[];
+  notes?: string;
+  consultation_status: 'in-progress' | 'completed';
+}
+
+export interface Message {
   _id?: string;
+  sender_id: string;
+  receiver_id: string;
+  message: string;
+  message_type: 'text' | 'image' | 'file';
+  timestamp: string;
+  read: boolean;
+  medical_record_id?: string;
 }
 
 export interface Record {
@@ -74,13 +129,16 @@ export interface Record {
   updated_at: string;
 }
 
-export interface Message {
-  _id?: string;
-  sender_id: string | any;
-  receiver_id: string | any;
-  message: string;
-  message_type: 'text' | 'image' | 'file';
-  timestamp: Date;
-  read: boolean;
-  medical_record_id?: string;
+export interface Appointment {
+  _id: string;
+  user_id: string;
+  doctor_id: string;
+  specialty_id?: string;
+  appointment_date: string;
+  time_slot: string;
+  status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
+  reason?: string;
+  notes?: string;
+  created_at: string;
 }
+
