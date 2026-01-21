@@ -502,16 +502,9 @@ const MedicalRecordDetail: React.FC = () => {
     }
   };
 
-  // Hàm mới: Fetch tất cả appointments liên quan
-  // Trong fetchAllAppointments
-const fetchAllAppointments = async (currentRecord: Record) => {
+ const fetchAllAppointments = async (currentRecord: Record) => {
   try {
     const headers = await getAuthHeaders();
-    
-    console.log(`🔄 Fetching appointments for record: ${currentRecord._id}`);
-    console.log(`👤 Patient: ${currentRecord.user_id._id}`);
-    console.log(`👨‍⚕️ Doctor: ${currentRecord.doctor_id._id}`);
-    
     // 1. Fetch appointments từ API re-examination
     try {
       const reExamRes = await axios.get(
@@ -527,6 +520,8 @@ const fetchAllAppointments = async (currentRecord: Record) => {
             console.log(`✅ Mapped re-examination appointment for step ${item.stepNumber}:`, {
               appointmentId: item.appointment._id,
               date: item.appointment.appointment_date,
+              doctorId: item.appointment.doctor_id?._id,
+              doctorName: item.appointment.doctor_id?.name,
               reason: item.appointment.reason,
               status: item.appointment.status
             });
@@ -548,6 +543,22 @@ const fetchAllAppointments = async (currentRecord: Record) => {
       );
 
       if (allAppointmentsRes.data && Array.isArray(allAppointmentsRes.data)) {
+        console.log(`📊 Total appointments fetched: ${allAppointmentsRes.data.length}`);
+        
+        // Log tất cả appointments để debug
+        allAppointmentsRes.data.forEach((app, index) => {
+          console.log(`Appointment ${index + 1}:`, {
+            id: app._id,
+            date: app.appointment_date,
+            reason: app.reason,
+            status: app.status,
+            doctorId: app.doctor_id?._id,
+            doctorName: app.doctor_id?.name,
+            patientId: app.user_id?._id || app.user_id,
+            is_re_examination: app.is_re_examination
+          });
+        });
+        
         setDirectAppointments(allAppointmentsRes.data);
         
         // Tự động map appointments với scheduled steps
@@ -565,7 +576,9 @@ const fetchAllAppointments = async (currentRecord: Record) => {
                 appointmentId: matchedAppointment._id,
                 date: matchedAppointment.appointment_date,
                 reason: matchedAppointment.reason,
-                status: matchedAppointment.status
+                status: matchedAppointment.status,
+                doctorId: matchedAppointment.doctor_id?._id,
+                doctorName: matchedAppointment.doctor_id?.name
               });
             }
           }
@@ -584,8 +597,6 @@ const fetchAllAppointments = async (currentRecord: Record) => {
   }
 };
 
-  // Helper: Tìm appointment phù hợp với step
-// Sửa trong findMatchingAppointment để debug kỹ hơn
 const findMatchingAppointment = (step: TreatmentStep, appointments: any[], currentRecord: Record): any => {
   console.log(`🔍 Finding appointment for step ${step.stepNumber} - ${step.title}`);
   console.log(`📅 Step reExaminationDate: ${step.reExaminationDate}`);
@@ -593,88 +604,105 @@ const findMatchingAppointment = (step: TreatmentStep, appointments: any[], curre
     recordId: currentRecord._id,
     doctorId: currentRecord.doctor_id._id,
     doctorName: currentRecord.doctor_id.name,
-    patientId: currentRecord.user_id._id
+    patientId: currentRecord.user_id._id,
+    stepId: step._id
+  });
+
+  // Tạo unique key cho step trong record này
+  const stepUniqueKey = `${currentRecord._id}-${step.stepNumber}`;
+  
+  console.log(`🔑 Step Unique Key: ${stepUniqueKey}`);
+
+  // **ƯU TIÊN 1: Tìm bằng unique key trong metadata**
+  const matchedByUniqueKey = appointments.find(app => {
+    const isMatch = app.metadata?.step_unique_key === stepUniqueKey ||
+                   app.metadata?.medical_record_id === currentRecord._id && 
+                   app.metadata?.step_number === step.stepNumber;
+    
+    console.log(`   Appointment ${app._id}: uniqueKey match = ${isMatch}`, {
+      app_unique_key: app.metadata?.step_unique_key,
+      app_medical_record_id: app.metadata?.medical_record_id,
+      app_step_number: app.metadata?.step_number
+    });
+    
+    return isMatch;
   });
   
-  // Lọc appointments liên quan đến record này - CHỈ KIỂM TRA PATIENT TRƯỚC
-  const relevantAppointments = appointments.filter(app => {
-    const isPatientMatch = app.user_id?._id === currentRecord.user_id._id || app.user_id === currentRecord.user_id._id;
-    console.log(`   Appointment ${app._id}: patient match = ${isPatientMatch} (app patient: ${app.user_id?._id || app.user_id})`);
-    return isPatientMatch;
-  });
-  
-  console.log(`🎯 Relevant appointments (patient match): ${relevantAppointments.length}`);
-  console.log(`📋 All appointments IDs:`, appointments.map(app => ({
-    id: app._id,
-    doctorId: app.doctor_id?._id || app.doctor_id,
-    patientId: app.user_id?._id || app.user_id,
-    date: app.appointment_date,
-    reason: app.reason,
-    status: app.status
-  })));
-  
-  // Ưu tiên 1: Appointment có ID trực tiếp từ step
+  if (matchedByUniqueKey) {
+    console.log(`✅ Matched by unique key: ${matchedByUniqueKey._id}`);
+    return matchedByUniqueKey;
+  }
+
+  // **ƯU TIÊN 2: Tìm bằng reExaminationAppointmentId**
   if (step.reExaminationAppointmentId) {
-    const directMatch = relevantAppointments.find(app => 
-      app._id === step.reExaminationAppointmentId
-    );
+    console.log(`🔍 Strategy 2: Looking for appointment with reExaminationAppointmentId`);
+    
+    const directMatch = appointments.find(app => {
+      const match = app._id === step.reExaminationAppointmentId;
+      console.log(`   Appointment ${app._id}: direct ID match = ${match}`);
+      return match;
+    });
+    
     if (directMatch) {
       console.log(`✅ Direct appointment ID match: ${directMatch._id}`);
       return directMatch;
     }
   }
-  
-  // Ưu tiên 2: Khớp theo ngày reExaminationDate
-  if (step.reExaminationDate) {
-    const reExamDate = new Date(step.reExaminationDate);
-    const reExamDateString = reExamDate.toISOString().split('T')[0];
+
+  // **ƯU TIÊN 3: Tìm bằng re_examination_step_id (có thể đã được fix)**
+  if (step._id) {
+    console.log(`🔍 Strategy 3: Looking for appointment with re_examination_step_id = ${step._id}`);
     
-    const matchedByDate = relevantAppointments.find(app => {
-      const appDate = new Date(app.appointment_date);
-      const appDateString = appDate.toISOString().split('T')[0];
-      
-      return appDateString === reExamDateString;
+    const directStepMatch = appointments.find(app => {
+      const stepIdMatch = app.re_examination_step_id?.toString() === step._id?.toString();
+      console.log(`   Appointment ${app._id}: stepId match = ${stepIdMatch} (${app.re_examination_step_id} vs ${step._id})`);
+      return stepIdMatch;
     });
     
-    if (matchedByDate) {
-      console.log(`✅ Matched by date: ${matchedByDate._id} (${matchedByDate.appointment_date})`);
-      return matchedByDate;
+    if (directStepMatch) {
+      console.log(`✅ Direct step ID match: ${directStepMatch._id} (re_examination_step_id: ${directStepMatch.re_examination_step_id})`);
+      return directStepMatch;
     }
   }
+
+  // **ƯU TIÊN 4: Tìm theo lý do có chứa medical record ID**
+  const recordIdShort = currentRecord._id.slice(-6);
+  console.log(`🔍 Strategy 4: Looking for appointment with record ID: ${recordIdShort}`);
   
-  // Ưu tiên 3: Khớp theo lý do (reason) - BỎ QUA KIỂM TRA DOCTOR
-  const stepTitleLower = step.title.toLowerCase();
-  const matchedByReason = relevantAppointments.find(app => {
-    const appReason = (app.reason || '').toLowerCase();
-    const appNotes = (app.notes || '').toLowerCase();
+  const matchedByRecordId = appointments.find(app => {
+    const reasonMatches = app.reason?.includes(recordIdShort) || 
+                         app.reason?.includes(currentRecord._id);
+    const notesMatches = app.notes?.includes(recordIdShort) || 
+                        app.notes?.includes(currentRecord._id);
     
-    return appReason.includes(stepTitleLower) || 
-           stepTitleLower.includes(appReason) ||
-           appReason.includes('re-examination') ||
-           appReason.includes('follow-up') ||
-           appReason.includes('physical review');
+    console.log(`   Appointment ${app._id}: record match = ${reasonMatches || notesMatches}`, {
+      reason: app.reason,
+      notes: app.notes
+    });
+    
+    return reasonMatches || notesMatches;
   });
   
-  if (matchedByReason) {
-    console.log(`✅ Matched by reason: ${matchedByReason._id} (${matchedByReason.reason})`);
-    return matchedByReason;
+  if (matchedByRecordId) {
+    console.log(`✅ Matched by record ID: ${matchedByRecordId._id}`);
+    return matchedByRecordId;
   }
-  
-  // Ưu tiên 4: Appointment gần nhất CÓ STATUS 'scheduled' HOẶC 'confirmed'
-  const validStatusAppointments = relevantAppointments.filter(app => 
-    app.status === 'scheduled' || app.status === 'confirmed'
-  );
-  
-  const sortedAppointments = validStatusAppointments.sort(
-    (a, b) => new Date(b.appointment_date).getTime() - new Date(a.appointment_date).getTime()
-  );
-  
-  if (sortedAppointments.length > 0) {
-    console.log(`✅ Using most recent appointment with valid status: ${sortedAppointments[0]._id}`);
-    return sortedAppointments[0];
-  }
-  
+
   console.log(`❌ No appointment found for step ${step.stepNumber}`);
+  
+  // Debug: Log tất cả appointments
+  console.log('📋 All available appointments:');
+  appointments.forEach((app, index) => {
+    console.log(`   ${index + 1}. ${app._id}:`, {
+      date: app.appointment_date,
+      reason: app.reason,
+      is_re_examination: app.is_re_examination,
+      re_examination_step_id: app.re_examination_step_id,
+      metadata: app.metadata,
+      step_unique_key: app.metadata?.step_unique_key
+    });
+  });
+  
   return null;
 };
 
