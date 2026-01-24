@@ -16,12 +16,9 @@ import {
   RefreshControl,
   FlatList,
   KeyboardAvoidingView,
-  Easing,
 } from 'react-native';
 import { useRoute, useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import FlashMessage, { showMessage } from 'react-native-flash-message';
@@ -29,20 +26,23 @@ import FlashMessage, { showMessage } from 'react-native-flash-message';
 const { width: screenWidth } = Dimensions.get('window');
 const API_BASE_URL = 'http://localhost:3000/api';
 
+// ==================== PATIENT-FRIENDLY COLOR PALETTE ====================
 const COLORS = {
-  primary: '#2563EB',
-  secondary: '#10B981',
-  warning: '#F59E0B',
-  danger: '#EF4444',
-  background: '#F8FAFC',
-  card: '#FFFFFF',
-  text: '#1E293B',
-  textLight: '#64748B',
-  border: '#E2E8F0',
+  primary: '#4A90E2',        // Soft blue
+  secondary: '#5CB85C',      // Fresh green
+  accent: '#FFB74D',         // Warm orange-yellow
+  danger: '#E57373',         // Soft red, not harsh
+  background: '#F5F7FA',     // Soft gray-white background
+  card: '#FFFFFF',           // Pure white
+  text: '#2C3E50',           // Dark gray-black
+  textLight: '#7F8C8D',      // Light gray
+  border: '#E0E6ED',         // Light border
+  success: '#81C784',        // Success green
+  warning: '#FFD54F',        // Warning yellow
+  info: '#64B5F6',           // Info blue
 };
 
 // ==================== TYPES ====================
-
 interface User {
   _id: string;
   name: string;
@@ -128,58 +128,69 @@ interface Appointment {
   created_at: Date;
 }
 
-// ==================== UI COMPONENTS ====================
+// ==================== HELPER COMPONENTS ====================
 
-const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
+const IconWithLabel: React.FC<{ icon: string; label: string; color?: string }> = ({ 
+  icon, 
+  label, 
+  color = COLORS.primary 
+}) => (
+  <View style={styles.iconLabelContainer}>
+    <View style={[styles.iconCircle, { backgroundColor: `${color}15` }]}>
+      <Ionicons name={icon as any} size={28} color={color} />
+    </View>
+    <Text style={styles.iconLabel}>{label}</Text>
+  </View>
+);
+
+const SimpleStatusBadge: React.FC<{ status: string }> = ({ status }) => {
   const config = useMemo(() => {
     const statusLower = status.toLowerCase();
     switch (statusLower) {
-      case 'completed': 
-        return { color: COLORS.secondary, icon: 'checkmark-circle', label: 'COMPLETED' };
-      case 'approved': 
-        return { color: COLORS.primary, icon: 'shield-checkmark', label: 'APPROVED' };
-      case 'in-progress': 
-      case 'in_progress': 
-        return { color: COLORS.warning, icon: 'time', label: 'IN PROGRESS' };
-      case 'scheduled': 
-        return { color: '#8B5CF6', icon: 'calendar', label: 'SCHEDULED' };
-      case 'pending': 
-        return { color: '#94A3B8', icon: 'hourglass', label: 'PENDING' };
-      default: 
-        return { color: '#CBD5E1', icon: 'help-circle', label: status.toUpperCase() };
+      case 'completed':
+      case 'approved':
+        return { color: COLORS.success, icon: 'checkmark-circle', label: 'Completed' };
+      case 'in-progress':
+      case 'in_progress':
+        return { color: COLORS.warning, icon: 'time-outline', label: 'In Progress' };
+      case 'scheduled':
+        return { color: COLORS.info, icon: 'calendar-outline', label: 'Scheduled' };
+      case 'pending':
+        return { color: COLORS.textLight, icon: 'hourglass-outline', label: 'Pending' };
+      default:
+        return { color: COLORS.textLight, icon: 'help-circle-outline', label: 'Unknown' };
     }
   }, [status]);
 
   return (
-    <View style={[styles.statusBadge, { backgroundColor: `${config.color}15` }]}>
-      <Ionicons name={config.icon as any} size={12} color={config.color} />
-      <Text style={[styles.statusBadgeText, { color: config.color }]}>{config.label}</Text>
+    <View style={[styles.statusBadge, { backgroundColor: config.color }]}>
+      <Ionicons name={config.icon as any} size={18} color="#FFF" />
+      <Text style={styles.statusBadgeText}>{config.label}</Text>
     </View>
   );
 };
 
-const AppointmentInfoCard: React.FC<{ 
-  appointment: Appointment | any, 
-  step: TreatmentStep,
-  onCheckIn?: () => void 
+const SimpleAppointmentCard: React.FC<{
+  appointment: Appointment | any;
+  step: TreatmentStep;
+  onCheckIn?: () => void;
 }> = ({ appointment, step, onCheckIn }) => {
-  // Nếu không có appointment từ API, tạo từ step data
   const effectiveAppointment = appointment || (step.reExaminationDate ? {
     _id: `mock_${step.stepNumber}`,
     appointment_date: step.reExaminationDate,
-    time_slot: "09:00", // Default time
+    time_slot: "09:00",
     status: step.status === 'scheduled' ? 'scheduled' : 'confirmed',
-    reason: step.followup_reason || step.description || "Re-examination",
+    reason: step.followup_reason || step.description || "Follow-up Examination",
     notes: step.doctorNotes || "",
-    location: "Main Hospital",
-    clinic_location: "Main Hospital - Room 101"
+    location: "Clinic",
+    clinic_location: "Clinic - Room 101"
   } : null);
 
   if (!effectiveAppointment) return null;
 
-  const appointmentDate = effectiveAppointment.appointment_date 
+  const appointmentDate = effectiveAppointment.appointment_date
     ? new Date(effectiveAppointment.appointment_date)
-    : step.reExaminationDate 
+    : step.reExaminationDate
       ? new Date(step.reExaminationDate)
       : null;
 
@@ -190,235 +201,134 @@ const AppointmentInfoCard: React.FC<{
   const isPast = appointmentDate < now;
   const status = effectiveAppointment.status?.toLowerCase() || 'scheduled';
 
-  // Get gradient colors based on status
-  const getGradientColors = () => {
-    if (isToday) return ['#F59E0B', '#D97706'];
-    if (isPast) return ['#6B7280', '#4B5563'];
-    
-    switch (status) {
-      case 'confirmed': return ['#10B981', '#059669'];
-      case 'completed': return ['#3B82F6', '#2563EB'];
-      case 'cancelled': return ['#EF4444', '#DC2626'];
-      default: return ['#8B5CF6', '#7C3AED'];
-    }
-  };
-
-  // Get title based on status
-  const getTitle = () => {
-    if (isToday) return "TODAY'S APPOINTMENT";
-    switch (status) {
-      case 'confirmed': return "CONFIRMED APPOINTMENT";
-      case 'completed': return "COMPLETED VISIT";
-      case 'cancelled': return "CANCELLED APPOINTMENT";
-      default: return "SCHEDULED APPOINTMENT";
-    }
-  };
-
-  // Format date
-  const formattedDate = appointmentDate.toLocaleDateString('en-US', { 
-    weekday: 'short',
-    month: 'short', 
-    day: 'numeric', 
-    year: 'numeric' 
+  const formattedDate = appointmentDate.toLocaleDateString('en-US', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
   });
 
-  // Format time
-  const timeSlot = effectiveAppointment.time_slot || 
-                   appointmentDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const timeSlot = effectiveAppointment.time_slot ||
+    appointmentDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+  const cardColor = isToday ? COLORS.accent : status === 'confirmed' ? COLORS.success : COLORS.info;
 
   return (
-    <LinearGradient colors={getGradientColors()} style={styles.appointmentCard}>
+    <View style={[styles.appointmentCard, { borderLeftColor: cardColor }]}>
       <View style={styles.appointmentHeader}>
-        <MaterialCommunityIcons 
-          name={isToday ? "calendar-today" : "calendar-clock"} 
-          size={18} 
-          color="#FFF" 
+        <Ionicons 
+          name={isToday ? "today" : "calendar"} 
+          size={24} 
+          color={cardColor} 
         />
-        <Text style={styles.appointmentTitle}>{getTitle()}</Text>
+        <Text style={styles.appointmentTitle}>
+          {isToday ? "🔔 Today's Appointment" : "📅 Follow-up Appointment"}
+        </Text>
       </View>
-      
-      <View style={styles.appointmentGrid}>
-        <View style={styles.appointmentItem}>
-          <Text style={styles.appointmentLabel}>DATE</Text>
-          <Text style={styles.appointmentValue}>{formattedDate}</Text>
-        </View>
-        
-        <View style={styles.appointmentItem}>
-          <Text style={styles.appointmentLabel}>TIME</Text>
-          <Text style={styles.appointmentValue}>{timeSlot}</Text>
-        </View>
-        
-        <View style={styles.appointmentItem}>
-          <Text style={styles.appointmentLabel}>STATUS</Text>
-          <View style={[
-            styles.statusBadgeSmall, 
-            { 
-              backgroundColor: status === 'confirmed' ? '#10B98120' : 
-                             status === 'completed' ? '#3B82F620' : 
-                             status === 'cancelled' ? '#EF444420' : '#F59E0B20'
-            }
-          ]}>
-            <Text style={[
-              styles.statusBadgeTextSmall,
-              { 
-                color: status === 'confirmed' ? '#10B981' : 
-                       status === 'completed' ? '#3B82F6' : 
-                       status === 'cancelled' ? '#EF4444' : '#F59E0B'
-              }
-            ]}>
-              {status.toUpperCase()}
-            </Text>
-          </View>
-        </View>
+
+      <View style={styles.appointmentRow}>
+        <Text style={styles.appointmentLabel}>Date:</Text>
+        <Text style={styles.appointmentValue}>{formattedDate}</Text>
       </View>
-      
-      {(effectiveAppointment.location || effectiveAppointment.clinic_location) && (
-        <View style={styles.locationRow}>
-          <Ionicons name="location" size={12} color="#FFF" />
-          <Text style={styles.locationText}>
-            {effectiveAppointment.location || effectiveAppointment.clinic_location || 'Main Hospital'}
-          </Text>
+
+      <View style={styles.appointmentRow}>
+        <Text style={styles.appointmentLabel}>Time:</Text>
+        <Text style={styles.appointmentValue}>{timeSlot}</Text>
+      </View>
+
+      {effectiveAppointment.location && (
+        <View style={styles.appointmentRow}>
+          <Text style={styles.appointmentLabel}>Location:</Text>
+          <Text style={styles.appointmentValue}>{effectiveAppointment.location}</Text>
         </View>
       )}
-      
+
       {effectiveAppointment.reason && (
         <View style={styles.reasonBox}>
-          <Text style={styles.reasonLabel}>REASON</Text>
+          <Text style={styles.reasonLabel}>Reason:</Text>
           <Text style={styles.reasonText}>{effectiveAppointment.reason}</Text>
         </View>
       )}
 
-      {/* Check-in button for scheduled appointments */}
+      {/* Check-in button */}
       {status === 'scheduled' && onCheckIn && !effectiveAppointment._id?.startsWith('mock_') && (
-  <TouchableOpacity 
-    style={styles.checkInButton}
-    onPress={onCheckIn}
-  >
-    <Ionicons name="checkmark-circle" size={18} color="#FFF" />
-    <Text style={styles.checkInText}>Confirm Check-in</Text>
-  </TouchableOpacity>
-)}
+        <TouchableOpacity style={styles.checkInButton} onPress={onCheckIn}>
+          <Ionicons name="checkmark-circle" size={22} color="#FFF" />
+          <Text style={styles.checkInButtonText}>Confirm Arrival</Text>
+        </TouchableOpacity>
+      )}
 
-
-      {/* Status indicator for confirmed appointments */}
+      {/* Checked-in status */}
+      {status === 'pending' && (
+        <View style={styles.pendingBox}>
+          <Ionicons name="time-outline" size={20} color={COLORS.warning} />
+          <Text style={styles.pendingText}>⏳ Pending Confirmation</Text>
+        </View>
+      )}
       {status === 'confirmed' && (
-        <View style={styles.confirmedRow}>
-          <Ionicons name="checkmark-circle" size={16} color="#10B981" />
-          <Text style={styles.confirmedText}>Checked in - Waiting for doctor</Text>
+        <View style={styles.confirmedBox}>
+          <Ionicons name="checkmark-done-circle" size={20} color={COLORS.success} />
+          <Text style={styles.confirmedText}>✓ Confirmed - Waiting to see doctor</Text>
         </View>
       )}
 
-      {/* Hiển thị nếu là mock appointment */}
+      {status === 'completed' && (
+        <View style={styles.completedBox}>
+          <Ionicons name="checkmark-circle" size={20} color={COLORS.success} />
+          <Text style={styles.completedText}>✓ Appointment Completed</Text>
+        </View>
+      )}
+
+      {/* Mock appointment note */}
       {effectiveAppointment._id?.startsWith('mock_') && (
-        <View style={styles.mockAppointmentNote}>
-          <Ionicons name="information-circle" size={14} color="#FBBF24" />
-          <Text style={styles.mockAppointmentNoteText}>
-            Appointment details will be confirmed by the clinic
+        <View style={styles.infoBox}>
+          <Ionicons name="information-circle-outline" size={18} color={COLORS.info} />
+          <Text style={styles.infoText}>
+            The clinic will contact to confirm specific appointment details
           </Text>
         </View>
       )}
-    </LinearGradient>
+    </View>
   );
 };
 
-const TreatmentProtocolCard: React.FC<{ step: TreatmentStep }> = ({ step }) => {
-  if (!step.createdAt) return null;
-  
-  const date = new Date(step.createdAt);
+const MedicationCard: React.FC<{ step: TreatmentStep }> = ({ step }) => {
+  if (!step.medication && !step.duration) return null;
+
   return (
-    <LinearGradient colors={['#3B82F6', '#2563EB']} style={styles.protocolCard}>
-      <View style={styles.protocolHeader}>
-        <MaterialCommunityIcons name="clipboard-pulse" size={18} color="#FFF" />
-        <Text style={styles.protocolTitle}>TREATMENT PROTOCOL</Text>
+    <View style={styles.medicationCard}>
+      <View style={styles.medicationHeader}>
+        <Ionicons name="medical" size={22} color={COLORS.primary} />
+        <Text style={styles.medicationTitle}>Medication and Prescription</Text>
       </View>
-      <View style={styles.protocolGrid}>
-        <View style={styles.protocolItem}>
-          <Text style={styles.protocolLabel}>STARTED</Text>
-          <Text style={styles.protocolValue}>
-            {date.toLocaleDateString('en-US', { 
-              month: 'short', 
-              day: 'numeric', 
-              year: 'numeric' 
-            })}
-          </Text>
-        </View>
-        <View style={styles.protocolItem}>
-          <Text style={styles.protocolLabel}>DURATION</Text>
-          <Text style={styles.protocolValue}>{step.duration || 'Flexible'}</Text>
-        </View>
-      </View>
+
       {step.medication && (
-        <View style={styles.medicationBox}>
-          <Text style={styles.medicationLabel}>MEDICATION</Text>
-          <Text style={styles.medicationText}>{step.medication}</Text>
+        <View style={styles.medicationRow}>
+          <Text style={styles.medicationLabel}>💊 Medication:</Text>
+          <Text style={styles.medicationValue}>{step.medication}</Text>
         </View>
       )}
-    </LinearGradient>
-  );
-};
 
-const ScheduledStepCard: React.FC<{
-  step: TreatmentStep;
-  appointment: any;
-  index: number;
-  onCheckIn?: () => void;
-  loading: boolean;
-  totalSteps: number;
-}> = ({ step, appointment, index, onCheckIn, loading, totalSteps }) => {
-  return (
-    <View key={step._id || index} style={styles.timelineItem}>
-      {/* Timeline connector */}
-      <View style={styles.timelineLeft}>
-        <View style={[
-          styles.timelineDot, 
-          { 
-            backgroundColor: '#8B5CF6' // Purple for scheduled
-          }
-        ]} />
-        {index !== totalSteps - 1 && <View style={styles.timelineConnector} />}
-      </View>
-            {/* Step content */}
-      <View style={[styles.stepCard]}>
-        <View style={styles.stepHeader}>
-          <Text style={styles.stepNumber}>PHASE {step.stepNumber}</Text>
-          <StatusBadge status={step.status} />
+      {step.dosage && (
+        <View style={styles.medicationRow}>
+          <Text style={styles.medicationLabel}>📏 Dosage:</Text>
+          <Text style={styles.medicationValue}>{step.dosage}</Text>
         </View>
-        
-        <Text style={styles.stepTitle}>{step.title}</Text>
-        <Text style={styles.stepDescription}>{step.description}</Text>
+      )}
 
-        {/* Luôn hiển thị appointment info cho scheduled steps */}
-        <AppointmentInfoCard 
-          appointment={appointment}
-          step={step}
-          onCheckIn={appointment?.status === 'scheduled' ? onCheckIn : undefined}
-        />
+      {step.duration && (
+        <View style={styles.medicationRow}>
+          <Text style={styles.medicationLabel}>⏱️ Duration:</Text>
+          <Text style={styles.medicationValue}>{step.duration}</Text>
+        </View>
+      )}
 
-        {/* Action buttons */}
-        {step.status === 'scheduled' && appointment?.status === 'scheduled' && !appointment?._id?.startsWith('mock_') && (
-          <View style={styles.stepActions}>
-            <TouchableOpacity 
-              style={styles.primaryButton}
-              onPress={onCheckIn}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#FFF" size="small" />
-              ) : (
-                <Text style={styles.primaryButtonText}>Check-in at Appointment</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Doctor notes */}
-        {step.doctorNotes && (
-          <View style={styles.doctorNotes}>
-            <Text style={styles.doctorNotesLabel}>DOCTOR FEEDBACK</Text>
-            <Text style={styles.doctorNotesText}>{step.doctorNotes}</Text>
-          </View>
-        )}
-      </View>
+      {step.instructions && (
+        <View style={styles.instructionsBox}>
+          <Text style={styles.instructionsLabel}>📋 Instructions:</Text>
+          <Text style={styles.instructionsText}>{step.instructions}</Text>
+        </View>
+      )}
     </View>
   );
 };
@@ -428,7 +338,7 @@ const ScheduledStepCard: React.FC<{
 const MedicalRecordDetail: React.FC = () => {
   const route = useRoute<any>();
   const navigation = useNavigation();
-  
+
   const initialRecord = route.params?.record;
   const [record, setRecord] = useState<Record>(initialRecord);
   const [loading, setLoading] = useState(false);
@@ -443,29 +353,17 @@ const MedicalRecordDetail: React.FC = () => {
   const [patientMsg, setPatientMsg] = useState('');
   const [directAppointments, setDirectAppointments] = useState<any[]>([]);
 
-  // Animations
+  // Animation
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(20)).current;
-  const progressAnim = useRef(new Animated.Value(0)).current;
 
-  // Memoized values
+  // Calculate completion percentage
   const completionPercentage = useMemo(() => {
     if (!record?.treatment_plan?.length) return 0;
-    const completedSteps = record.treatment_plan.filter(step => 
+    const completedSteps = record.treatment_plan.filter(step =>
       ['approved', 'completed'].includes(step.status.toLowerCase())
     );
-    return (completedSteps.length / record.treatment_plan.length) * 100;
+    return Math.round((completedSteps.length / record.treatment_plan.length) * 100);
   }, [record]);
-
-  const severityColor = useMemo(() => {
-    const severity = record.severity?.toLowerCase() || 'moderate';
-    switch (severity) {
-      case 'mild': return '#FBBF24';
-      case 'severe': return '#EF4444';
-      case 'critical': return '#7F1D1D';
-      default: return '#F59E0B';
-    }
-  }, [record.severity]);
 
   // API Functions
   const getAuthHeaders = async () => {
@@ -481,7 +379,7 @@ const MedicalRecordDetail: React.FC = () => {
       setLoading(true);
       const headers = await getAuthHeaders();
       const res = await axios.get(`${API_BASE_URL}/medical-records/my-records`, { headers });
-      
+
       if (res.data && Array.isArray(res.data)) {
         const current = res.data.find((r: Record) => r._id === record._id);
         if (current) {
@@ -493,218 +391,113 @@ const MedicalRecordDetail: React.FC = () => {
       console.error('Failed to fetch record:', error);
       if (error.response?.status === 401) {
         showMessage({ message: "Session expired. Please login again.", type: "danger" });
-        navigation.navigate('Login');
+        navigation.navigate('Login' as never);
       } else {
-        showMessage({ message: "Failed to load record details", type: "danger" });
+        showMessage({ message: "Cannot load record information", type: "danger" });
       }
     } finally {
       setLoading(false);
     }
   };
 
- const fetchAllAppointments = async (currentRecord: Record) => {
-  try {
-    const headers = await getAuthHeaders();
-    // 1. Fetch appointments từ API re-examination
+  // FIX: Optimized appointment fetching
+  const fetchAllAppointments = async (currentRecord: Record) => {
     try {
-      const reExamRes = await axios.get(
-        `${API_BASE_URL}/medical-records/${currentRecord._id}/re-examination/appointments`,
-        { headers }
-      );
+      const headers = await getAuthHeaders();
+      
+      // Fetch all appointments in parallel to improve performance
+      const [allAppointmentsRes, reExamRes] = await Promise.allSettled([
+        axios.get(`${API_BASE_URL}/patient/appointments/history`, { headers }),
+        axios.get(`${API_BASE_URL}/medical-records/${currentRecord._id}/re-examination/appointments`, { headers })
+      ]);
 
-      if (reExamRes.data?.success && reExamRes.data.data?.stepAppointments) {
-        const appointments: Record<string, any> = {};
-        reExamRes.data.data.stepAppointments.forEach((item: any) => {
-          if (item.appointment) {
+      const appointments: Record<string, any> = {};
+      
+      // Process re-examination appointments
+      if (reExamRes.status === 'fulfilled' && reExamRes.value.data?.success) {
+        const stepAppointmentsData = reExamRes.value.data.data?.stepAppointments || [];
+        stepAppointmentsData.forEach((item: any) => {
+          if (item.appointment && item.stepNumber) {
             appointments[item.stepNumber] = item.appointment;
-            console.log(`✅ Mapped re-examination appointment for step ${item.stepNumber}:`, {
-              appointmentId: item.appointment._id,
-              date: item.appointment.appointment_date,
-              doctorId: item.appointment.doctor_id?._id,
-              doctorName: item.appointment.doctor_id?.name,
-              reason: item.appointment.reason,
-              status: item.appointment.status
-            });
           }
         });
-        setStepAppointments(appointments);
-      } else {
-        console.log('⚠️ No re-examination appointments found in API response');
       }
-    } catch (reExamError) {
-      console.log('⚠️ Re-examination API error:', reExamError.message);
-    }
 
-    // 2. Fetch tất cả appointments của user để tìm appointment phù hợp
-    try {
-      const allAppointmentsRes = await axios.get(
-        `${API_BASE_URL}/patient/appointments/history`,
-        { headers }
-      );
+      // Process all appointments
+      if (allAppointmentsRes.status === 'fulfilled' && Array.isArray(allAppointmentsRes.value.data)) {
+        const allAppointments = allAppointmentsRes.value.data;
+        setDirectAppointments(allAppointments);
 
-      if (allAppointmentsRes.data && Array.isArray(allAppointmentsRes.data)) {
-        console.log(`📊 Total appointments fetched: ${allAppointmentsRes.data.length}`);
-        
-        // Log tất cả appointments để debug
-        allAppointmentsRes.data.forEach((app, index) => {
-          console.log(`Appointment ${index + 1}:`, {
-            id: app._id,
-            date: app.appointment_date,
-            reason: app.reason,
-            status: app.status,
-            doctorId: app.doctor_id?._id,
-            doctorName: app.doctor_id?.name,
-            patientId: app.user_id?._id || app.user_id,
-            is_re_examination: app.is_re_examination
-          });
-        });
-        
-        setDirectAppointments(allAppointmentsRes.data);
-        
-        // Tự động map appointments với scheduled steps
-        const newAppointments = { ...stepAppointments };
-        let updated = false;
-        
+        // Match appointments to treatment steps
         currentRecord.treatment_plan.forEach(step => {
-          // CHỈ TÌM APPOINTMENT CHO CÁC STEP CÓ STATUS 'scheduled'
-          if (step.status.toLowerCase() === 'scheduled' && !newAppointments[step.stepNumber]) {
-            const matchedAppointment = findMatchingAppointment(step, allAppointmentsRes.data, currentRecord);
+          if (step.status.toLowerCase() === 'scheduled' && !appointments[step.stepNumber]) {
+            const matchedAppointment = findMatchingAppointment(step, allAppointments, currentRecord);
             if (matchedAppointment) {
-              newAppointments[step.stepNumber] = matchedAppointment;
-              updated = true;
-              console.log(`🔗 Auto-matched appointment for step ${step.stepNumber}:`, {
-                appointmentId: matchedAppointment._id,
-                date: matchedAppointment.appointment_date,
-                reason: matchedAppointment.reason,
-                status: matchedAppointment.status,
-                doctorId: matchedAppointment.doctor_id?._id,
-                doctorName: matchedAppointment.doctor_id?.name
-              });
+              appointments[step.stepNumber] = matchedAppointment;
             }
           }
         });
-        
-        if (updated) {
-          setStepAppointments(newAppointments);
-        }
       }
-    } catch (appointmentsError) {
-      console.error('Error fetching all appointments:', appointmentsError);
+
+      // Set appointments state - FIX: Only update if there are changes
+      setStepAppointments(prev => {
+        const prevKeys = Object.keys(prev).sort().join(',');
+        const newKeys = Object.keys(appointments).sort().join(',');
+        
+        if (prevKeys !== newKeys) {
+          return appointments;
+        }
+        
+        // Deep compare if keys are same
+        const hasChanges = Object.keys(appointments).some(key => 
+          JSON.stringify(prev[key]) !== JSON.stringify(appointments[key])
+        );
+        
+        return hasChanges ? appointments : prev;
+      });
+
+    } catch (error) {
+      console.error('Error in fetchAllAppointments:', error);
+    }
+  };
+
+  const findMatchingAppointment = (step: TreatmentStep, appointments: any[], currentRecord: Record): any => {
+    const stepUniqueKey = `${currentRecord._id}-${step.stepNumber}`;
+
+    // Find by unique key
+    const matchedByUniqueKey = appointments.find(app =>
+      app.metadata?.step_unique_key === stepUniqueKey ||
+      (app.metadata?.medical_record_id === currentRecord._id &&
+        app.metadata?.step_number === step.stepNumber)
+    );
+
+    if (matchedByUniqueKey) return matchedByUniqueKey;
+
+    // Find by reExaminationAppointmentId
+    if (step.reExaminationAppointmentId) {
+      const directMatch = appointments.find(app => app._id === step.reExaminationAppointmentId);
+      if (directMatch) return directMatch;
     }
 
-  } catch (error) {
-    console.error('Error in fetchAllAppointments:', error);
-  }
-};
-
-const findMatchingAppointment = (step: TreatmentStep, appointments: any[], currentRecord: Record): any => {
-  console.log(`🔍 Finding appointment for step ${step.stepNumber} - ${step.title}`);
-  console.log(`📅 Step reExaminationDate: ${step.reExaminationDate}`);
-  console.log(`🆔 Current Record Info:`, {
-    recordId: currentRecord._id,
-    doctorId: currentRecord.doctor_id._id,
-    doctorName: currentRecord.doctor_id.name,
-    patientId: currentRecord.user_id._id,
-    stepId: step._id
-  });
-
-  // Tạo unique key cho step trong record này
-  const stepUniqueKey = `${currentRecord._id}-${step.stepNumber}`;
-  
-  console.log(`🔑 Step Unique Key: ${stepUniqueKey}`);
-
-  // **ƯU TIÊN 1: Tìm bằng unique key trong metadata**
-  const matchedByUniqueKey = appointments.find(app => {
-    const isMatch = app.metadata?.step_unique_key === stepUniqueKey ||
-                   app.metadata?.medical_record_id === currentRecord._id && 
-                   app.metadata?.step_number === step.stepNumber;
-    
-    console.log(`   Appointment ${app._id}: uniqueKey match = ${isMatch}`, {
-      app_unique_key: app.metadata?.step_unique_key,
-      app_medical_record_id: app.metadata?.medical_record_id,
-      app_step_number: app.metadata?.step_number
-    });
-    
-    return isMatch;
-  });
-  
-  if (matchedByUniqueKey) {
-    console.log(`✅ Matched by unique key: ${matchedByUniqueKey._id}`);
-    return matchedByUniqueKey;
-  }
-
-  // **ƯU TIÊN 2: Tìm bằng reExaminationAppointmentId**
-  if (step.reExaminationAppointmentId) {
-    console.log(`🔍 Strategy 2: Looking for appointment with reExaminationAppointmentId`);
-    
-    const directMatch = appointments.find(app => {
-      const match = app._id === step.reExaminationAppointmentId;
-      console.log(`   Appointment ${app._id}: direct ID match = ${match}`);
-      return match;
-    });
-    
-    if (directMatch) {
-      console.log(`✅ Direct appointment ID match: ${directMatch._id}`);
-      return directMatch;
+    // Find by re_examination_step_id
+    if (step._id) {
+      const directStepMatch = appointments.find(app =>
+        app.re_examination_step_id?.toString() === step._id?.toString()
+      );
+      if (directStepMatch) return directStepMatch;
     }
-  }
 
-  // **ƯU TIÊN 3: Tìm bằng re_examination_step_id (có thể đã được fix)**
-  if (step._id) {
-    console.log(`🔍 Strategy 3: Looking for appointment with re_examination_step_id = ${step._id}`);
-    
-    const directStepMatch = appointments.find(app => {
-      const stepIdMatch = app.re_examination_step_id?.toString() === step._id?.toString();
-      console.log(`   Appointment ${app._id}: stepId match = ${stepIdMatch} (${app.re_examination_step_id} vs ${step._id})`);
-      return stepIdMatch;
-    });
-    
-    if (directStepMatch) {
-      console.log(`✅ Direct step ID match: ${directStepMatch._id} (re_examination_step_id: ${directStepMatch.re_examination_step_id})`);
-      return directStepMatch;
-    }
-  }
+    // Find by record ID
+    const recordIdShort = currentRecord._id.slice(-6);
+    const matchedByRecordId = appointments.find(app =>
+      app.reason?.includes(recordIdShort) ||
+      app.reason?.includes(currentRecord._id) ||
+      app.notes?.includes(recordIdShort) ||
+      app.notes?.includes(currentRecord._id)
+    );
 
-  // **ƯU TIÊN 4: Tìm theo lý do có chứa medical record ID**
-  const recordIdShort = currentRecord._id.slice(-6);
-  console.log(`🔍 Strategy 4: Looking for appointment with record ID: ${recordIdShort}`);
-  
-  const matchedByRecordId = appointments.find(app => {
-    const reasonMatches = app.reason?.includes(recordIdShort) || 
-                         app.reason?.includes(currentRecord._id);
-    const notesMatches = app.notes?.includes(recordIdShort) || 
-                        app.notes?.includes(currentRecord._id);
-    
-    console.log(`   Appointment ${app._id}: record match = ${reasonMatches || notesMatches}`, {
-      reason: app.reason,
-      notes: app.notes
-    });
-    
-    return reasonMatches || notesMatches;
-  });
-  
-  if (matchedByRecordId) {
-    console.log(`✅ Matched by record ID: ${matchedByRecordId._id}`);
-    return matchedByRecordId;
-  }
-
-  console.log(`❌ No appointment found for step ${step.stepNumber}`);
-  
-  // Debug: Log tất cả appointments
-  console.log('📋 All available appointments:');
-  appointments.forEach((app, index) => {
-    console.log(`   ${index + 1}. ${app._id}:`, {
-      date: app.appointment_date,
-      reason: app.reason,
-      is_re_examination: app.is_re_examination,
-      re_examination_step_id: app.re_examination_step_id,
-      metadata: app.metadata,
-      step_unique_key: app.metadata?.step_unique_key
-    });
-  });
-  
-  return null;
-};
+    return matchedByRecordId || null;
+  };
 
   const loadMessages = async () => {
     try {
@@ -718,7 +511,7 @@ const findMatchingAppointment = (step: TreatmentStep, appointments: any[], curre
 
   const handleSendChat = async () => {
     if (!newMessage.trim()) return;
-    
+
     try {
       const headers = await getAuthHeaders();
       await axios.post(
@@ -731,13 +524,13 @@ const findMatchingAppointment = (step: TreatmentStep, appointments: any[], curre
         },
         { headers }
       );
-      
+
       setNewMessage('');
       loadMessages();
       showMessage({ message: "Message sent", type: "success" });
     } catch (error) {
       console.error('Failed to send message:', error);
-      showMessage({ message: "Failed to send message", type: "danger" });
+      showMessage({ message: "Cannot send message", type: "danger" });
     }
   };
 
@@ -767,167 +560,130 @@ const findMatchingAppointment = (step: TreatmentStep, appointments: any[], curre
           if (appointment && !appointment._id?.startsWith('mock_')) {
             url = `${API_BASE_URL}/appointments/${appointment._id}/check-in`;
           } else {
-            throw new Error('No real appointment found for this step');
+            throw new Error('Appointment not found');
           }
           break;
       }
 
       if (!url) {
-        throw new Error('Invalid action or missing URL');
+        throw new Error('Invalid action');
       }
 
       await axios.patch(url, payload, { headers });
-      
-      showMessage({ message: "Action completed successfully", type: "success" });
-      
+
+      showMessage({ message: "Action successful", type: "success" });
+
       if (action === 'complete') {
         setShowReport(false);
         setConditionDesc('');
         setPatientMsg('');
       }
-      
+
       await fetchRecordDetails();
     } catch (error: any) {
       console.error('Action failed:', error);
-      showMessage({ 
-        message: error.response?.data?.message || "Operation failed", 
-        type: "danger" 
+      showMessage({
+        message: error.response?.data?.message || "Action failed",
+        type: "danger"
       });
     } finally {
       setLoading(false);
     }
   };
 
-  const renderStepContent = (step: TreatmentStep, index: number) => {
+  // Render each treatment step
+  const renderTreatmentStep = (step: TreatmentStep, index: number) => {
     const appointment = stepAppointments[step.stepNumber];
     const isScheduled = step.status.toLowerCase() === 'scheduled';
     const isInProgress = step.status.toLowerCase() === 'in-progress' || step.status.toLowerCase() === 'in_progress';
+    const isPending = step.status.toLowerCase() === 'pending';
+    const isCompleted = ['approved', 'completed'].includes(step.status.toLowerCase());
 
-    console.log(`🔍 Step ${step.stepNumber} - ${step.title}`, {
-      hasAppointment: !!appointment,
-      appointmentData: appointment,
-      isScheduled,
-      stepStatus: step.status,
-      stepDescription: step.description
-    });
-
-    // NẾU LÀ SCHEDULED - luôn hiển thị appointment card
-    if (isScheduled) {
-      return (
-        <ScheduledStepCard
-          key={step._id || index}
-          step={step}
-          appointment={appointment}
-          index={index}
-          onCheckIn={() => handleStepAction('confirm', step.stepNumber)}
-          loading={loading}
-        />
-      );
-    }
-
-    // NẾU KHÔNG PHẢI SCHEDULED - hiển thị bình thường
     return (
-      <View key={step._id || index} style={styles.timelineItem}>
-        {/* Timeline connector */}
-        <View style={styles.timelineLeft}>
-          <View style={[
-            styles.timelineDot, 
-            { 
-              backgroundColor: isInProgress ? COLORS.warning : 
-                              step.status === 'completed' || step.status === 'approved' ? COLORS.secondary : COLORS.border
-            }
-          ]} />
-          {index !== record.treatment_plan.length - 1 && <View style={styles.timelineConnector} />}
+      <View key={step._id || index} style={styles.stepContainer}>
+        {/* Step number */}
+        <View style={styles.stepNumberBox}>
+          <Text style={styles.stepNumberText}>Step {step.stepNumber}</Text>
+          <SimpleStatusBadge status={step.status} />
         </View>
 
-        {/* Step content */}
-        <View style={[styles.stepCard, isInProgress && styles.activeStepBorder]}>
-          <View style={styles.stepHeader}>
-            <Text style={styles.stepNumber}>PHASE {step.stepNumber}</Text>
-            <StatusBadge status={step.status} />
-          </View>
-          
-          <Text style={styles.stepTitle}>{step.title}</Text>
-          <Text style={styles.stepDescription}>{step.description}</Text>
+        {/* Step title */}
+        <Text style={styles.stepTitle}>{step.title}</Text>
 
-          {/* Show treatment protocol for non-scheduled steps */}
-          {step.createdAt && !isScheduled && (
-            <TreatmentProtocolCard step={step} />
-          )}
+        {/* Description */}
+        <Text style={styles.stepDescription}>{step.description}</Text>
 
-          {/* Show visit info for completed physical visits */}
-          {!isScheduled && step.reExaminationDate && (
-            <LinearGradient colors={['#10B981', '#059669']} style={styles.completedVisitCard}>
-              <View style={styles.completedVisitHeader}>
-                <MaterialCommunityIcons name="calendar-check" size={18} color="#FFF" />
-                <Text style={styles.completedVisitTitle}>VISIT COMPLETED</Text>
-              </View>
-              <Text style={styles.completedVisitDate}>
-                {new Date(step.reExaminationDate).toLocaleDateString('en-US', { 
-                  month: 'long', 
-                  day: 'numeric', 
-                  year: 'numeric' 
-                })}
-              </Text>
-            </LinearGradient>
-          )}
+        {/* Appointment information (if any) */}
+        {isScheduled && (
+          <SimpleAppointmentCard
+            appointment={appointment}
+            step={step}
+            onCheckIn={() => handleStepAction('confirm', step.stepNumber)}
+          />
+        )}
 
-          {/* Action buttons */}
-          <View style={styles.stepActions}>
-            {step.status === 'pending' && (
-              <TouchableOpacity 
-                style={styles.primaryButton}
-                onPress={() => handleStepAction('activate', step.stepNumber)}
-                disabled={loading}
-              >
-                {loading ? (
-                  <ActivityIndicator color="#FFF" size="small" />
-                ) : (
-                  <Text style={styles.primaryButtonText}>Start This Phase</Text>
-                )}
-              </TouchableOpacity>
-            )}
-            
-            {step.status === 'in-progress' && (
-              <TouchableOpacity 
-                style={styles.secondaryButton}
-                onPress={() => {
-                  setSelectedStep(step);
-                  setShowReport(true);
-                }}
-                disabled={loading}
-              >
-                <Text style={styles.secondaryButtonText}>Submit Health Report</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-          
-          {/* Doctor notes */}
-          {step.doctorNotes && (
-            <View style={styles.doctorNotes}>
-              <Text style={styles.doctorNotesLabel}>DOCTOR FEEDBACK</Text>
-              <Text style={styles.doctorNotesText}>{step.doctorNotes}</Text>
+        {/* Medication information */}
+        {!isScheduled && <MedicationCard step={step} />}
+
+        {/* Doctor's message */}
+        {step.doctorNotes && (
+          <View style={styles.doctorNotesBox}>
+            <View style={styles.doctorNotesHeader}>
+              <Ionicons name="chatbox-ellipses" size={20} color={COLORS.primary} />
+              <Text style={styles.doctorNotesTitle}>Doctor's Message</Text>
             </View>
+            <Text style={styles.doctorNotesText}>{step.doctorNotes}</Text>
+          </View>
+        )}
+
+        {/* Action buttons */}
+        <View style={styles.actionButtons}>
+          {isPending && (
+            <TouchableOpacity
+              style={styles.startButton}
+              onPress={() => handleStepAction('activate', step.stepNumber)}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#FFF" />
+              ) : (
+                <>
+                  <Ionicons name="play-circle" size={24} color="#FFF" />
+                  <Text style={styles.buttonText}>Start This Step</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
+
+          {isInProgress && (
+            <TouchableOpacity
+              style={styles.reportButton}
+              onPress={() => {
+                setSelectedStep(step);
+                setShowReport(true);
+              }}
+              disabled={loading}
+            >
+              <Ionicons name="document-text" size={24} color="#FFF" />
+              <Text style={styles.buttonText}>Report Condition</Text>
+            </TouchableOpacity>
           )}
         </View>
+
+        {/* Separator */}
+        {index < record.treatment_plan.length - 1 && <View style={styles.stepDivider} />}
       </View>
     );
   };
 
   // Effects
   useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
-      Animated.spring(slideAnim, { toValue: 0, tension: 50, useNativeDriver: true })
-    ]).start();
-
-    Animated.timing(progressAnim, {
-      toValue: completionPercentage,
-      duration: 1000,
-      easing: Easing.bezier(0.4, 0, 0.2, 1),
-      useNativeDriver: false
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 500,
+      useNativeDriver: true
     }).start();
-  }, [completionPercentage]);
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -940,9 +696,9 @@ const findMatchingAppointment = (step: TreatmentStep, appointments: any[], curre
   if (!record) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.centered}>
+        <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={styles.loadingText}>Loading treatment details...</Text>
+          <Text style={styles.loadingText}>Loading information...</Text>
         </View>
       </SafeAreaView>
     );
@@ -950,26 +706,27 @@ const findMatchingAppointment = (step: TreatmentStep, appointments: any[], curre
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
       <FlashMessage position="top" />
 
-      {/* Header */}
+      {/* Simple header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconButton}>
-          <Ionicons name="arrow-back" size={22} color={COLORS.text} />
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={28} color={COLORS.text} />
+          <Text style={styles.backText}>Back</Text>
         </TouchableOpacity>
-        <View style={styles.headerTitle}>
-          <Text style={styles.headerTitleText}>Treatment Journey</Text>
-          <Text style={styles.recordId}>ID: #{record._id.slice(-6).toUpperCase()}</Text>
-        </View>
-        <TouchableOpacity 
-          onPress={() => { setShowChat(true); loadMessages(); }} 
-          style={styles.iconButton}
+
+        <TouchableOpacity
+          onPress={() => {
+            setShowChat(true);
+            loadMessages();
+          }}
+          style={styles.chatButton}
         >
-          <Ionicons name="chatbubbles-outline" size={22} color={COLORS.primary} />
+          <Ionicons name="chatbubbles" size={26} color={COLORS.primary} />
           {messages.filter(m => m.sender_id !== record.user_id._id && !m.read).length > 0 && (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>
+            <View style={styles.chatBadge}>
+              <Text style={styles.chatBadgeText}>
                 {messages.filter(m => m.sender_id !== record.user_id._id && !m.read).length}
               </Text>
             </View>
@@ -977,108 +734,115 @@ const findMatchingAppointment = (step: TreatmentStep, appointments: any[], curre
         </TouchableOpacity>
       </View>
 
-      <ScrollView 
+      <ScrollView
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Progress card */}
-        <Animated.View style={[styles.card, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+        {/* Overall progress card */}
+        <Animated.View style={[styles.progressCard, { opacity: fadeAnim }]}>
           <View style={styles.progressHeader}>
-            <View>
-              <Text style={styles.progressLabel}>OVERALL COMPLETION</Text>
-              <Text style={styles.progressValue}>{Math.round(completionPercentage)}%</Text>
-              <Text style={styles.progressSubtitle}>
-                {record.treatment_plan?.filter(s => 
-                  ['approved', 'completed'].includes(s.status.toLowerCase())
-                ).length} of {record.treatment_plan?.length} phases completed
-              </Text>
+            <Ionicons name="ribbon" size={36} color={COLORS.primary} />
+            <View style={styles.progressTextContainer}>
+              <Text style={styles.progressTitle}>Treatment Progress</Text>
+              <Text style={styles.progressPercentage}>{completionPercentage}%</Text>
             </View>
-            <MaterialCommunityIcons name="progress-check" size={32} color={COLORS.primary} />
           </View>
-          <View style={styles.progressBar}>
-            <Animated.View style={[styles.progressFill, { 
-              width: progressAnim.interpolate({ 
-                inputRange: [0, 100], 
-                outputRange: ['0%', '100%'] 
-              }) 
-            }]} />
+
+          <View style={styles.progressBarContainer}>
+            <View style={[styles.progressBarFill, { width: `${completionPercentage}%` }]} />
           </View>
+
+          <Text style={styles.progressSubtitle}>
+            Completed {record.treatment_plan?.filter(s =>
+              ['approved', 'completed'].includes(s.status.toLowerCase())
+            ).length} / {record.treatment_plan?.length} steps
+          </Text>
         </Animated.View>
 
         {/* Diagnosis card */}
-        <View style={styles.card}>
+        <View style={styles.diagnosisCard}>
           <View style={styles.diagnosisHeader}>
-            <View style={[styles.severityDot, { backgroundColor: severityColor }]} />
-            <Text style={styles.diagnosisTitle}>Diagnosis</Text>
-            <View style={[styles.severityTag, { backgroundColor: `${severityColor}20` }]}>
-              <Text style={[styles.severityTagText, { color: severityColor }]}>
-                {record.severity?.toUpperCase() || 'MODERATE'}
-              </Text>
-            </View>
+            <Ionicons name="medical" size={28} color={COLORS.primary} />
+            <Text style={styles.diagnosisTitle}>Doctor's Diagnosis</Text>
           </View>
+
           <Text style={styles.diagnosisText}>{record.diagnosis}</Text>
-          <View style={styles.doctorInfo}>
-            <Ionicons name="medical" size={12} color={COLORS.textLight} />
-            <Text style={styles.doctorName}>Supervised by Dr. {record.doctor_id?.name || 'Unknown'}</Text>
+
+          <View style={styles.doctorInfoRow}>
+            <Ionicons name="person-circle" size={20} color={COLORS.textLight} />
+            <Text style={styles.doctorInfoText}>
+              Attending Doctor: {record.doctor_id?.name || 'Not specified'}
+            </Text>
           </View>
+
+          {record.severity && (
+            <View style={styles.severityRow}>
+              <Text style={styles.severityLabel}>Severity:</Text>
+              <View style={[
+                styles.severityBadge,
+                {
+                  backgroundColor:
+                    record.severity.toLowerCase() === 'mild' ? COLORS.warning :
+                      record.severity.toLowerCase() === 'moderate' ? COLORS.accent :
+                        COLORS.danger
+                }
+              ]}>
+                <Text style={styles.severityText}>
+                  {record.severity.toLowerCase() === 'mild' ? 'Mild' :
+                    record.severity.toLowerCase() === 'moderate' ? 'Moderate' :
+                      'Severe'}
+                </Text>
+              </View>
+            </View>
+          )}
         </View>
 
-        {/* Treatment phases */}
-        <Text style={styles.sectionTitle}>Treatment Phases</Text>
-        {record.treatment_plan?.map((step, index) => renderStepContent(step, index))}
-        
-        {/* Debug section (chỉ hiển thị trong development) */}
-        {__DEV__ && (
-          <View style={styles.debugSection}>
-            <Text style={styles.debugTitle}>Debug Info</Text>
-            <Text style={styles.debugText}>
-              Step 2 Status: {record.treatment_plan[1]?.status || 'N/A'}
-            </Text>
-            <Text style={styles.debugText}>
-              Has Appointment: {stepAppointments[2] ? 'Yes' : 'No'}
-            </Text>
-            <Text style={styles.debugText}>
-              Total Direct Appointments: {directAppointments.length}
-            </Text>
-          </View>
-        )}
+        {/* Treatment steps list */}
+        <View style={styles.treatmentSection}>
+          <Text style={styles.sectionTitle}>📋 Treatment Steps</Text>
+          {record.treatment_plan?.map((step, index) => renderTreatmentStep(step, index))}
+        </View>
       </ScrollView>
 
-      {/* Health report modal */}
+      {/* Condition report modal */}
       <Modal visible={showReport} animationType="slide" transparent>
-        <BlurView intensity={30} style={styles.modalOverlay}>
-          <KeyboardAvoidingView 
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+        <View style={styles.modalOverlay}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             style={styles.modalContainer}
           >
             <View style={styles.modalContent}>
               <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Daily Progress Report</Text>
+                <Text style={styles.modalTitle}>Health Condition Report</Text>
                 <TouchableOpacity onPress={() => setShowReport(false)}>
-                  <Ionicons name="close" size={24} color={COLORS.text} />
+                  <Ionicons name="close-circle" size={32} color={COLORS.textLight} />
                 </TouchableOpacity>
               </View>
-              
-              <Text style={styles.inputLabel}>How are you feeling? (Required)</Text>
-              <TextInput 
+
+              <Text style={styles.inputLabel}>
+                How are you feeling? (Required) <Text style={styles.required}>*</Text>
+              </Text>
+              <TextInput
                 style={styles.textInput}
                 multiline
-                placeholder="Describe any symptoms or changes..."
+                placeholder="Example: Pain reduced, still have mild cough..."
                 value={conditionDesc}
                 onChangeText={setConditionDesc}
+                placeholderTextColor={COLORS.textLight}
               />
 
-              <Text style={styles.inputLabel}>Message for Doctor (Optional)</Text>
-              <TextInput 
-                style={[styles.textInput, { height: 80 }]}
+              <Text style={styles.inputLabel}>Message for doctor (Optional)</Text>
+              <TextInput
+                style={[styles.textInput, styles.messageInput]}
                 multiline
-                placeholder="Ask questions or leave comments..."
+                placeholder="Example: I want to ask about medication dosage..."
                 value={patientMsg}
                 onChangeText={setPatientMsg}
+                placeholderTextColor={COLORS.textLight}
               />
 
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.submitButton, (!conditionDesc || loading) && styles.disabledButton]}
                 disabled={!conditionDesc || loading}
                 onPress={() => selectedStep && handleStepAction('complete', selectedStep.stepNumber)}
@@ -1086,64 +850,87 @@ const findMatchingAppointment = (step: TreatmentStep, appointments: any[], curre
                 {loading ? (
                   <ActivityIndicator color="#FFF" />
                 ) : (
-                  <Text style={styles.submitButtonText}>Submit Report</Text>
+                  <>
+                    <Ionicons name="send" size={22} color="#FFF" />
+                    <Text style={styles.submitButtonText}>Send Report</Text>
+                  </>
                 )}
               </TouchableOpacity>
+
+              <Text style={styles.modalNote}>
+                💡 Reports help doctors track your condition better
+              </Text>
             </View>
           </KeyboardAvoidingView>
-        </BlurView>
+        </View>
       </Modal>
 
       {/* Chat modal */}
       <Modal visible={showChat} animationType="slide">
         <SafeAreaView style={styles.chatContainer}>
           <View style={styles.chatHeader}>
-            <TouchableOpacity onPress={() => setShowChat(false)} style={styles.chatBackButton}>
-              <Ionicons name="chevron-down" size={28} color={COLORS.text} />
+            <TouchableOpacity onPress={() => setShowChat(false)} style={styles.chatCloseButton}>
+              <Ionicons name="arrow-back" size={28} color={COLORS.text} />
             </TouchableOpacity>
-            <View>
-              <Text style={styles.chatDoctorName}>Dr. {record.doctor_id?.name || 'Unknown'}</Text>
-              <Text style={styles.chatStatus}>Professional Medical Chat</Text>
+            <View style={styles.chatHeaderInfo}>
+              <Text style={styles.chatDoctorName}>💬 Message Doctor</Text>
+              <Text style={styles.chatDoctorSubtitle}>
+                Dr. {record.doctor_id?.name || 'Not specified'}
+              </Text>
             </View>
           </View>
 
-          <FlatList 
+          <FlatList
             data={messages}
             keyExtractor={(item) => item._id || Math.random().toString()}
             contentContainerStyle={styles.chatList}
-            renderItem={({ item }) => (
-              <View style={[
-                styles.messageBubble, 
-                item.sender_id === record.user_id._id ? styles.myMessage : styles.otherMessage
-              ]}>
-                <Text style={[
-                  styles.messageText, 
-                  item.sender_id === record.user_id._id ? styles.myMessageText : styles.otherMessageText
-                ]}>{item.message}</Text>
-                <Text style={styles.messageTime}>
-                  {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </Text>
-              </View>
-            )}
+            renderItem={({ item }) => {
+              const isMine = item.sender_id === record.user_id._id;
+              return (
+                <View style={[styles.messageBubble, isMine ? styles.myMessage : styles.doctorMessage]}>
+                  {!isMine && (
+                    <View style={styles.doctorAvatar}>
+                      <Ionicons name="person-circle" size={24} color={COLORS.primary} />
+                    </View>
+                  )}
+                  <View style={styles.messageContent}>
+                    <Text style={[styles.messageText, isMine ? styles.myMessageText : styles.doctorMessageText]}>
+                      {item.message}
+                    </Text>
+                    <Text style={styles.messageTime}>
+                      {new Date(item.timestamp).toLocaleTimeString('en-US', {
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </Text>
+                  </View>
+                </View>
+              );
+            }}
             ListEmptyComponent={
-              <Text style={styles.emptyChat}>No messages yet. Start the conversation!</Text>
+              <View style={styles.emptyChat}>
+                <Ionicons name="chatbubbles-outline" size={64} color={COLORS.border} />
+                <Text style={styles.emptyChatText}>No messages yet</Text>
+                <Text style={styles.emptyChatSubtext}>Send a message to communicate with doctor</Text>
+              </View>
             }
           />
 
           <View style={styles.chatInputContainer}>
-            <TextInput 
+            <TextInput
               style={styles.chatInput}
               placeholder="Type your message..."
               value={newMessage}
               onChangeText={setNewMessage}
               multiline
+              placeholderTextColor={COLORS.textLight}
             />
-            <TouchableOpacity 
-              style={[styles.sendButton, !newMessage.trim() && styles.disabledSendButton]} 
+            <TouchableOpacity
+              style={[styles.sendButton, !newMessage.trim() && styles.disabledSendButton]}
               onPress={handleSendChat}
               disabled={!newMessage.trim()}
             >
-              <Ionicons name="send" size={20} color="#FFF" />
+              <Ionicons name="send" size={24} color="#FFF" />
             </TouchableOpacity>
           </View>
         </SafeAreaView>
@@ -1155,676 +942,701 @@ const findMatchingAppointment = (step: TreatmentStep, appointments: any[], curre
 // ==================== STYLES ====================
 
 const styles = StyleSheet.create({
-  // Container & Layout
-  container: { 
-    flex: 1, 
-    backgroundColor: COLORS.background 
+  // Container
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.background,
   },
-  centered: {
+  loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
   loadingText: {
     marginTop: 20,
-    fontSize: 16,
+    fontSize: 18,
     color: COLORS.textLight,
+    fontWeight: '600',
   },
-  
+
   // Header
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: 20,
-    paddingVertical: 15,
+    paddingVertical: 16,
     backgroundColor: COLORS.card,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
-  iconButton: {
-    padding: 8,
-    borderRadius: 12,
-    backgroundColor: '#F1F5F9',
-  },
-  headerTitle: {
+  backButton: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
   },
-  headerTitleText: {
+  backText: {
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '600',
     color: COLORS.text,
   },
-  recordId: {
-    fontSize: 12,
-    color: COLORS.textLight,
-    fontWeight: '500',
+  chatButton: {
+    padding: 8,
+    position: 'relative',
   },
-  badge: {
+  chatBadge: {
     position: 'absolute',
-    top: -4,
-    right: -4,
+    top: 4,
+    right: 4,
     backgroundColor: COLORS.danger,
-    borderRadius: 10,
-    width: 18,
-    height: 18,
+    borderRadius: 12,
+    minWidth: 20,
+    height: 20,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 4,
   },
-  badgeText: {
+  chatBadgeText: {
     color: '#FFF',
-    fontSize: 10,
-    fontWeight: 'bold',
+    fontSize: 12,
+    fontWeight: '700',
   },
-  
+
   // Scroll Content
-  scrollContent: { 
-    padding: 20, 
-    paddingBottom: 60 
+  scrollContent: {
+    padding: 20,
+    paddingBottom: 40,
+  },
+
+  // Progress Card
+  progressCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 20,
+    padding: 24,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  progressHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+    gap: 16,
+  },
+  progressTextContainer: {
+    flex: 1,
+  },
+  progressTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: COLORS.text,
+    marginBottom: 4,
+  },
+  progressPercentage: {
+    fontSize: 36,
+    fontWeight: '900',
+    color: COLORS.primary,
+  },
+  progressBarContainer: {
+    height: 12,
+    backgroundColor: COLORS.border,
+    borderRadius: 6,
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: COLORS.primary,
+    borderRadius: 6,
+  },
+  progressSubtitle: {
+    fontSize: 16,
+    color: COLORS.textLight,
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+
+  // Diagnosis Card
+  diagnosisCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 20,
+    padding: 24,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  diagnosisHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    gap: 12,
+  },
+  diagnosisTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  diagnosisText: {
+    fontSize: 17,
+    color: COLORS.text,
+    lineHeight: 26,
+    marginBottom: 20,
+  },
+  doctorInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    gap: 8,
+  },
+  doctorInfoText: {
+    fontSize: 16,
+    color: COLORS.textLight,
+    fontWeight: '600',
+  },
+  severityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+    gap: 12,
+  },
+  severityLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.textLight,
+  },
+  severityBadge: {
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  severityText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+
+  // Treatment Section
+  treatmentSection: {
+    marginTop: 8,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: '800',
     color: COLORS.text,
     marginBottom: 20,
-    marginTop: 10,
   },
-  
-  // Card Styles
-  card: {
+
+  // Step Container
+  stepContainer: {
     backgroundColor: COLORS.card,
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 20,
     marginBottom: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
   },
-  
-  // Progress Card
-  progressHeader: {
+  stepNumberBox: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 16,
   },
-  progressLabel: {
-    fontSize: 12,
+  stepNumberText: {
+    fontSize: 16,
     fontWeight: '700',
-    color: COLORS.textLight,
-    letterSpacing: 0.5,
-  },
-  progressValue: {
-    fontSize: 32,
-    fontWeight: '900',
-    color: COLORS.text,
-    marginTop: 4,
-  },
-  progressSubtitle: {
-    fontSize: 13,
-    color: COLORS.textLight,
-    marginTop: 4,
-  },
-  progressBar: {
-    height: 8,
-    backgroundColor: '#E2E8F0',
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: COLORS.primary,
-  },
-  
-  // Diagnosis Card
-  diagnosisHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  severityDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginRight: 10,
-  },
-  diagnosisTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: COLORS.text,
-    flex: 1,
-  },
-  severityTag: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  severityTagText: {
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  diagnosisText: {
-    fontSize: 15,
-    color: '#334155',
-    lineHeight: 22,
-    marginBottom: 16,
-  },
-  doctorInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
-  },
-  doctorName: {
-    fontSize: 13,
-    color: COLORS.textLight,
-    fontWeight: '600',
-    marginLeft: 6,
-  },
-  
-  // Timeline
-  timelineItem: {
-    flexDirection: 'row',
-    marginBottom: 20,
-  },
-  timelineLeft: {
-    width: 40,
-    alignItems: 'center',
-  },
-  timelineDot: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    borderWidth: 3,
-    borderColor: '#FFF',
-    zIndex: 2,
-    marginTop: 20,
-  },
-  timelineConnector: {
-    position: 'absolute',
-    top: 30,
-    bottom: -20,
-    width: 2,
-    backgroundColor: COLORS.border,
-  },
-  
-  // Step Card
-  stepCard: {
-    flex: 1,
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  activeStepBorder: {
-    borderColor: COLORS.primary,
-    borderWidth: 2,
-  },
-  stepHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  stepNumber: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: COLORS.textLight,
-    letterSpacing: 0.5,
+    color: COLORS.primary,
+    textTransform: 'uppercase',
   },
   stepTitle: {
-    fontSize: 17,
+    fontSize: 20,
     fontWeight: '700',
     color: COLORS.text,
-    marginBottom: 6,
+    marginBottom: 12,
+    lineHeight: 28,
   },
   stepDescription: {
-    fontSize: 14,
+    fontSize: 16,
     color: COLORS.textLight,
-    lineHeight: 20,
-    marginBottom: 16,
+    lineHeight: 24,
+    marginBottom: 20,
   },
-  stepActions: {
-    marginTop: 16,
+  stepDivider: {
+    height: 1,
+    backgroundColor: COLORS.border,
+    marginTop: 20,
   },
-  
+
   // Status Badge
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    gap: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 6,
   },
   statusBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFF',
   },
-  statusBadgeSmall: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    alignSelf: 'flex-start',
-  },
-  statusBadgeTextSmall: {
-    fontSize: 9,
-    fontWeight: '800',
-  },
-  
+
   // Appointment Card
   appointmentCard: {
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 16,
+    backgroundColor: '#F0F9FF',
+    borderLeftWidth: 5,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
   },
   appointmentHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
-    gap: 8,
+    marginBottom: 16,
+    gap: 10,
   },
   appointmentTitle: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#FFF',
-    letterSpacing: 0.5,
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.text,
   },
-  appointmentGrid: {
+  appointmentRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  appointmentItem: {
-    minWidth: '45%',
+    justifyContent: 'space-between',
+    marginBottom: 12,
   },
   appointmentLabel: {
-    fontSize: 10,
-    color: '#DBEAFE',
-    fontWeight: '700',
-    marginBottom: 2,
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.textLight,
   },
   appointmentValue: {
-    fontSize: 15,
-    color: '#FFF',
+    fontSize: 16,
     fontWeight: '700',
-  },
-  locationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 12,
-    gap: 6,
-  },
-  locationText: {
-    fontSize: 12,
-    color: '#FFF',
-    fontWeight: '500',
+    color: COLORS.text,
+    flex: 1,
+    textAlign: 'right',
   },
   reasonBox: {
-    marginTop: 10,
-    padding: 8,
-    backgroundColor: '#FFFFFF20',
-    borderRadius: 6,
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 12,
   },
   reasonLabel: {
-    fontSize: 9,
-    color: '#DBEAFE',
+    fontSize: 14,
     fontWeight: '700',
-    marginBottom: 2,
+    color: COLORS.textLight,
+    marginBottom: 6,
   },
   reasonText: {
-    fontSize: 12,
-    color: '#FFF',
-    fontWeight: '400',
+    fontSize: 15,
+    color: COLORS.text,
+    lineHeight: 22,
   },
   checkInButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#10B981',
-    paddingVertical: 10,
-    borderRadius: 8,
-    marginTop: 12,
-    gap: 8,
+    backgroundColor: COLORS.success,
+    paddingVertical: 16,
+    borderRadius: 12,
+    marginTop: 16,
+    gap: 10,
   },
-  checkInText: {
-    color: '#FFF',
+  checkInButtonText: {
+    fontSize: 17,
     fontWeight: '700',
-    fontSize: 14,
+    color: '#FFF',
   },
-  confirmedRow: {
+  confirmedBox: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    marginTop: 12,
-    paddingVertical: 8,
-    backgroundColor: '#10B98120',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#10B98140',
+    backgroundColor: '#E8F5E9',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    marginTop: 16,
+    gap: 10,
   },
   confirmedText: {
-    color: '#10B981',
+    fontSize: 16,
     fontWeight: '600',
-    fontSize: 13,
+    color: COLORS.success,
   },
-  mockAppointmentNote: {
+  infoBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 12,
-    padding: 8,
-    backgroundColor: '#FEF3C720',
-    borderRadius: 6,
-    gap: 6,
+    backgroundColor: '#E3F2FD',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    marginTop: 16,
+    gap: 10,
   },
-  mockAppointmentNoteText: {
-    fontSize: 11,
-    color: '#92400E',
+  infoText: {
+    fontSize: 14,
+    color: COLORS.info,
     fontWeight: '500',
     flex: 1,
   },
-  
-  // Treatment Protocol Card
-  protocolCard: {
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 16,
+
+  // Medication Card
+  medicationCard: {
+    backgroundColor: '#FFF8E1',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
   },
-  protocolHeader: {
+  medicationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    gap: 10,
+  },
+  medicationTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  medicationRow: {
+    marginBottom: 12,
+  },
+  medicationLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: COLORS.textLight,
+    marginBottom: 4,
+  },
+  medicationValue: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.text,
+    lineHeight: 24,
+  },
+  instructionsBox: {
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 12,
+  },
+  instructionsLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.textLight,
+    marginBottom: 8,
+  },
+  instructionsText: {
+    fontSize: 15,
+    color: COLORS.text,
+    lineHeight: 22,
+  },
+
+  // Doctor Notes
+  doctorNotesBox: {
+    backgroundColor: '#E8EAF6',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+  },
+  doctorNotesHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 12,
-    gap: 8,
+    gap: 10,
   },
-  protocolTitle: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#FFF',
-    letterSpacing: 0.5,
-  },
-  protocolGrid: {
-    flexDirection: 'row',
-    gap: 20,
-  },
-  protocolItem: {
-    flex: 1,
-  },
-  protocolLabel: {
-    fontSize: 10,
-    color: '#DBEAFE',
+  doctorNotesTitle: {
+    fontSize: 17,
     fontWeight: '700',
-    marginBottom: 2,
-  },
-  protocolValue: {
-    fontSize: 15,
-    color: '#FFF',
-    fontWeight: '700',
-  },
-  medicationBox: {
-    marginTop: 10,
-    padding: 8,
-    backgroundColor: '#FFFFFF20',
-    borderRadius: 6,
-  },
-  medicationLabel: {
-    fontSize: 9,
-    color: '#DBEAFE',
-    fontWeight: '700',
-    marginBottom: 2,
-  },
-  medicationText: {
-    fontSize: 12,
-    color: '#FFF',
-    fontWeight: '400',
-  },
-  
-  // Completed Visit Card
-  completedVisitCard: {
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 16,
-  },
-  completedVisitHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-    gap: 8,
-  },
-  completedVisitTitle: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#FFF',
-    letterSpacing: 0.5,
-  },
-  completedVisitDate: {
-    fontSize: 15,
-    color: '#FFF',
-    fontWeight: '700',
-  },
-  
-  // Doctor Notes
-  doctorNotes: {
-    marginTop: 16,
-    padding: 12,
-    backgroundColor: '#F0F9FF',
-    borderRadius: 8,
-    borderLeftWidth: 3,
-    borderLeftColor: '#0EA5E9',
-  },
-  doctorNotesLabel: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#0369A1',
-    marginBottom: 4,
+    color: COLORS.text,
   },
   doctorNotesText: {
-    fontSize: 13,
-    color: '#075985',
+    fontSize: 16,
+    color: COLORS.text,
+    lineHeight: 24,
     fontStyle: 'italic',
   },
-  
-  // Buttons
-  primaryButton: {
+
+  // Action Buttons
+  actionButtons: {
+    gap: 12,
+  },
+  startButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: COLORS.primary,
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
+    paddingVertical: 18,
+    borderRadius: 14,
+    gap: 12,
   },
-  primaryButtonText: {
+  reportButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.secondary,
+    paddingVertical: 18,
+    borderRadius: 14,
+    gap: 12,
+  },
+  buttonText: {
+    fontSize: 17,
+    fontWeight: '700',
     color: '#FFF',
-    fontWeight: '700',
-    fontSize: 14,
   },
-  secondaryButton: {
-    backgroundColor: '#EFF6FF',
-    paddingVertical: 14,
-    borderRadius: 12,
+
+  // Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: COLORS.card,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 28,
+    maxHeight: '85%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#DBEAFE',
+    marginBottom: 24,
   },
-  secondaryButtonText: {
-    color: COLORS.primary,
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: COLORS.text,
+  },
+  inputLabel: {
+    fontSize: 17,
     fontWeight: '700',
-    fontSize: 14,
-  },
-  
-  // Debug Section
-  debugSection: {
-    backgroundColor: '#FEF3C7',
-    borderRadius: 8,
-    padding: 12,
+    color: COLORS.text,
+    marginBottom: 10,
     marginTop: 20,
+  },
+  required: {
+    color: COLORS.danger,
+  },
+  textInput: {
+    backgroundColor: COLORS.background,
+    borderRadius: 14,
+    padding: 18,
+    fontSize: 16,
+    color: COLORS.text,
+    height: 120,
+    textAlignVertical: 'top',
     borderWidth: 1,
-    borderColor: '#FBBF24',
+    borderColor: COLORS.border,
   },
-  debugTitle: {
-    fontSize: 12,
+  messageInput: {
+    height: 100,
+  },
+  submitButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primary,
+    paddingVertical: 18,
+    borderRadius: 14,
+    marginTop: 28,
+    gap: 12,
+  },
+  submitButtonText: {
+    fontSize: 18,
     fontWeight: '700',
-    color: '#92400E',
-    marginBottom: 8,
+    color: '#FFF',
   },
-  debugText: {
-    fontSize: 11,
-    color: '#92400E',
+  disabledButton: {
+    backgroundColor: COLORS.border,
+  },
+  modalNote: {
+    fontSize: 14,
+    color: COLORS.textLight,
+    textAlign: 'center',
+    marginTop: 16,
+    fontStyle: 'italic',
+  },
+
+  // Chat
+  chatContainer: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+  chatHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: COLORS.card,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    gap: 16,
+  },
+  chatCloseButton: {
+    padding: 4,
+  },
+  chatHeaderInfo: {
+    flex: 1,
+  },
+  chatDoctorName: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: COLORS.text,
     marginBottom: 4,
   },
-  
-  // Modal Styles
-  modalOverlay: { 
-    flex: 1, 
-    justifyContent: 'flex-end' 
+  chatDoctorSubtitle: {
+    fontSize: 15,
+    color: COLORS.textLight,
+    fontWeight: '500',
   },
-  modalContainer: { 
-    flex: 1, 
-    justifyContent: 'flex-end' 
+  chatList: {
+    padding: 20,
   },
-  modalContent: { 
-    backgroundColor: '#FFF', 
-    borderTopLeftRadius: 24, 
-    borderTopRightRadius: 24, 
-    padding: 24,
-    maxHeight: '80%',
+  messageBubble: {
+    flexDirection: 'row',
+    marginBottom: 16,
+    maxWidth: '85%',
   },
-  modalHeader: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    alignItems: 'center', 
-    marginBottom: 20 
+  myMessage: {
+    alignSelf: 'flex-end',
+    flexDirection: 'row-reverse',
   },
-  modalTitle: { 
-    fontSize: 20, 
-    fontWeight: '800', 
-    color: COLORS.text 
+  doctorMessage: {
+    alignSelf: 'flex-start',
   },
-  inputLabel: { 
-    fontSize: 14, 
-    fontWeight: '700', 
-    color: COLORS.text, 
-    marginBottom: 8, 
-    marginTop: 16 
+  doctorAvatar: {
+    marginRight: 10,
   },
-  textInput: { 
-    backgroundColor: '#F1F5F9', 
-    borderRadius: 12, 
-    padding: 14, 
-    fontSize: 15, 
-    height: 100, 
-    textAlignVertical: 'top' 
+  messageContent: {
+    flex: 1,
   },
-  submitButton: { 
-    backgroundColor: COLORS.primary, 
-    padding: 16, 
-    borderRadius: 12, 
-    alignItems: 'center', 
-    marginTop: 24 
+  messageText: {
+    fontSize: 16,
+    lineHeight: 24,
+    padding: 16,
+    borderRadius: 18,
   },
-  submitButtonText: { 
-    color: '#FFF', 
-    fontWeight: '800', 
-    fontSize: 16 
+  myMessageText: {
+    backgroundColor: COLORS.primary,
+    color: '#FFF',
+    borderBottomRightRadius: 4,
   },
-  disabledButton: { 
-    opacity: 0.5 
+  doctorMessageText: {
+    backgroundColor: COLORS.card,
+    color: COLORS.text,
+    borderBottomLeftRadius: 4,
   },
-  
-  // Chat Styles
-  chatContainer: { 
-    flex: 1, 
-    backgroundColor: '#FFF' 
+  messageTime: {
+    fontSize: 13,
+    color: COLORS.textLight,
+    marginTop: 6,
+    marginLeft: 16,
+    fontWeight: '500',
   },
-  chatHeader: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    padding: 16, 
-    borderBottomWidth: 1, 
-    borderBottomColor: COLORS.border 
+  emptyChat: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 100,
+    gap: 12,
   },
-  chatBackButton: { 
-    marginRight: 16 
+  emptyChatText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: COLORS.textLight,
   },
-  chatDoctorName: { 
-    fontSize: 18, 
-    fontWeight: '700', 
-    color: COLORS.text 
+  emptyChatSubtext: {
+    fontSize: 15,
+    color: COLORS.textLight,
   },
-  chatStatus: { 
-    fontSize: 12, 
-    color: COLORS.secondary, 
-    fontWeight: '600' 
+  chatInputContainer: {
+    flexDirection: 'row',
+    padding: 16,
+    backgroundColor: COLORS.card,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    alignItems: 'flex-end',
+    gap: 12,
   },
-  chatList: { 
-    padding: 16 
+  chatInput: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+    borderRadius: 24,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    fontSize: 16,
+    maxHeight: 120,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
-  messageBubble: { 
-    maxWidth: '80%', 
-    padding: 12, 
-    borderRadius: 18, 
-    marginBottom: 12 
+  sendButton: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  myMessage: { 
-    alignSelf: 'flex-end', 
-    backgroundColor: COLORS.primary, 
-    borderBottomRightRadius: 4 
+  disabledSendButton: {
+    backgroundColor: COLORS.border,
   },
-  otherMessage: { 
-    alignSelf: 'flex-start', 
-    backgroundColor: '#F1F5F9', 
-    borderBottomLeftRadius: 4 
+
+  // Icon with Label
+  iconLabelContainer: {
+    alignItems: 'center',
+    gap: 8,
   },
-  messageText: { 
-    fontSize: 15, 
-    lineHeight: 22 
+  iconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  myMessageText: { 
-    color: '#FFF' 
+  iconLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.textLight,
   },
-  otherMessageText: { 
-    color: COLORS.text 
+  completedBox: {
+    backgroundColor: '#E8F5E9',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
   },
-  messageTime: { 
-    fontSize: 10, 
-    marginTop: 5, 
-    opacity: 0.6, 
-    alignSelf: 'flex-end' 
+  completedText: {
+    fontSize: 14,
+    color: COLORS.success,
+    fontWeight: '700',
   },
-  emptyChat: { 
-    textAlign: 'center', 
-    marginTop: 100, 
-    color: COLORS.textLight 
+  pendingBox: {
+    backgroundColor: '#FFF3E0',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
   },
-  chatInputContainer: { 
-    flexDirection: 'row', 
-    padding: 16, 
-    borderTopWidth: 1, 
-    borderTopColor: COLORS.border, 
-    alignItems: 'flex-end', 
-    gap: 12 
-  },
-  chatInput: { 
-    flex: 1, 
-    backgroundColor: '#F8FAFC', 
-    borderRadius: 24, 
-    paddingHorizontal: 16, 
-    paddingVertical: 10, 
-    fontSize: 15, 
-    maxHeight: 100 
-  },
-  sendButton: { 
-    width: 44, 
-    height: 44, 
-    borderRadius: 22, 
-    backgroundColor: COLORS.primary, 
-    justifyContent: 'center', 
-    alignItems: 'center' 
-  },
-  disabledSendButton: { 
-    backgroundColor: '#E2E8F0' 
+  pendingText: {
+    fontSize: 14,
+    color: COLORS.warning,
+    fontWeight: '700',
   },
 });
 

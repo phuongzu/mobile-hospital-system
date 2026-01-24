@@ -141,7 +141,6 @@ const fetchAvailableSlots = async () => {
         );
       }
     } else {
-      // Fallback logic
       simulateAvailableSlots();
     }
   } catch (error) {
