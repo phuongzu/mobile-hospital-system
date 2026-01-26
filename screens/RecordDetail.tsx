@@ -541,55 +541,89 @@ const MedicalRecordDetail: React.FC = () => {
   };
 
   const handleStepAction = async (action: 'activate' | 'complete' | 'confirm', stepNumber: number) => {
-    setLoading(true);
-    try {
-      const headers = await getAuthHeaders();
-      let url = '';
-      let payload = {};
+  setLoading(true);
+  try {
+    const headers = await getAuthHeaders();
+    let url = '';
+    let payload = {};
 
-      switch (action) {
-        case 'activate':
-          url = `${API_BASE_URL}/medical-records/${record._id}/steps/${stepNumber}/activate`;
-          break;
-        case 'complete':
-          url = `${API_BASE_URL}/medical-records/${record._id}/steps/${stepNumber}/complete-with-message`;
-          payload = { patientMessage: patientMsg, conditionDescription: conditionDesc };
-          break;
-        case 'confirm':
-          const appointment = stepAppointments[stepNumber];
-          if (appointment && !appointment._id?.startsWith('mock_')) {
-            url = `${API_BASE_URL}/appointments/${appointment._id}/check-in`;
-          } else {
-            throw new Error('Appointment not found');
-          }
-          break;
-      }
-
-      if (!url) {
-        throw new Error('Invalid action');
-      }
-
-      await axios.patch(url, payload, { headers });
-
-      showMessage({ message: "Action successful", type: "success" });
-
-      if (action === 'complete') {
-        setShowReport(false);
-        setConditionDesc('');
-        setPatientMsg('');
-      }
-
-      await fetchRecordDetails();
-    } catch (error: any) {
-      console.error('Action failed:', error);
-      showMessage({
-        message: error.response?.data?.message || "Action failed",
-        type: "danger"
-      });
-    } finally {
-      setLoading(false);
+    switch (action) {
+      case 'activate':
+        url = `${API_BASE_URL}/medical-records/${record._id}/steps/${stepNumber}/activate`;
+        break;
+      case 'complete':
+        url = `${API_BASE_URL}/medical-records/${record._id}/steps/${stepNumber}/complete-with-message`;
+        payload = { patientMessage: patientMsg, conditionDescription: conditionDesc };
+        break;
+      case 'confirm':
+        const appointment = stepAppointments[stepNumber];
+        if (appointment && !appointment._id?.startsWith('mock_')) {
+          // SỬA: Sử dụng endpoint đúng
+          url = `${API_BASE_URL}/patient/appointments/${appointment._id}/check-in`;
+        } else {
+          throw new Error('Appointment not found or is a mock appointment');
+        }
+        break;
     }
-  };
+
+    if (!url) {
+      throw new Error('Invalid action');
+    }
+
+    console.log(`📤 Making ${action} request to:`, url);
+        const method = action === 'confirm' ? 'PATCH' : 'PATCH';
+    
+    const response = await axios({
+      method,
+      url,
+      data: payload,
+      headers
+    });
+
+    console.log('✅ Action successful:', response.data);
+
+    showMessage({ 
+      message: response.data.message || "Action successful", 
+      type: "success" 
+    });
+
+    if (action === 'complete') {
+      setShowReport(false);
+      setConditionDesc('');
+      setPatientMsg('');
+    }
+
+    // Refresh data
+    await fetchRecordDetails();
+    
+  } catch (error: any) {
+    console.error('❌ Action failed:', error);
+    
+    // Hiển thị thông báo lỗi chi tiết hơn
+    let errorMsg = "Action failed";
+    if (error.response?.data?.message) {
+      errorMsg = error.response.data.message;
+    } else if (error.message) {
+      errorMsg = error.message;
+    }
+    
+    showMessage({
+      message: errorMsg,
+      type: "danger",
+      duration: 4000
+    });
+    
+    // Log chi tiết để debug
+    console.error('Error details:', {
+      status: error.response?.status,
+      data: error.response?.data,
+      url: error.config?.url
+    });
+    
+  } finally {
+    setLoading(false);
+  }
+};
 
   // Render each treatment step
   const renderTreatmentStep = (step: TreatmentStep, index: number) => {
