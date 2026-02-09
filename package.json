@@ -22,8 +22,11 @@
     "expo": "~53.0.13",
     "expo-blur": "^15.0.7",
     "expo-calendar": "~14.1.4",
+    "expo-clipboard": "~7.1.5",
     "expo-file-system": "~18.1.11",
+    "expo-haptics": "~14.1.4",
     "expo-image-picker": "^16.1.4",
+    "expo-intent-launcher": "~12.1.5",
     "expo-linear-gradient": "~14.1.5",
     "expo-linking": "~7.1.7",
     "expo-local-authentication": "^17.0.7",
@@ -43,8 +46,7 @@
     "react-native-screens": "~4.11.1",
     "react-native-vector-icons": "^10.2.0",
     "socket.io": "^4.8.3",
-    "socket.io-client": "^4.8.3",
-    "expo-intent-launcher": "~12.1.5"
+    "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

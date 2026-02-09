@@ -19,17 +19,52 @@ import {
   Modal,
   TouchableWithoutFeedback,
   ActionSheetIOS,
+  ScrollView,
+  Pressable,
 } from 'react-native';
-import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import * as FileSystem from 'expo-file-system';
 import * as IntentLauncher from 'expo-intent-launcher';
+import * as Haptics from 'expo-haptics';
 import { MediaTypeOptions, launchImageLibraryAsync } from 'expo-image-picker';
+import * as Clipboard from 'expo-clipboard';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import io, { Socket } from 'socket.io-client';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
+
+// ==================== CONSTANTS ====================
+const COLORS = {
+  primary: '#0084FF',
+  primaryDark: '#0066CC',
+  primaryLight: '#E7F3FF',
+  success: '#00C853',
+  error: '#FF3B30',
+  warning: '#FF9500',
+  background: '#FFFFFF',
+  backgroundSecondary: '#F0F2F5',
+  text: '#050505',
+  textSecondary: '#65676B',
+  textLight: '#B0B3B8',
+  border: '#E4E6EB',
+  messageBubbleMe: '#0084FF',
+  messageBubbleThem: '#E4E6EB',
+  online: '#31A24C',
+  offline: '#8E8E93',
+};
+
+const SIZES = {
+  avatarSmall: 32,
+  avatarMedium: 40,
+  avatarLarge: 56,
+  iconSmall: 20,
+  iconMedium: 24,
+  iconLarge: 28,
+  borderRadius: 20,
+  spacing: 12,
+};
 
 // ==================== INTERFACES ====================
 interface User {
@@ -37,6 +72,12 @@ interface User {
   name: string;
   avatar?: string;
   role: string;
+}
+
+interface Reaction {
+  user_id: User;
+  emoji: string;
+  createdAt: string;
 }
 
 interface Message {
@@ -53,6 +94,7 @@ interface Message {
   medical_record_id?: string;
   appointment_id?: string;
   read: boolean;
+  read_at?: string;
   timestamp: string;
   createdAt: string;
   updatedAt: string;
@@ -60,6 +102,10 @@ interface Message {
   edited_at?: string;
   deleted?: boolean;
   deleted_at?: string;
+  deleted_by?: string;
+  reactions?: Reaction[];
+  reactions_count?: number;
+  status?: 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
 }
 
 interface Conversation {
@@ -69,48 +115,36 @@ interface Conversation {
   last_message_at: string;
   unread_count: number;
   medical_record_id?: string;
+  appointment_id?: string;
+}
+
+interface GroupedReaction {
+  emoji: string;
+  count: number;
+  users: User[];
+  isReactedByMe: boolean;
 }
 
 const API_BASE_URL = 'http://localhost:3000';
 const API_ENDPOINT = `${API_BASE_URL}/api`;
 
 // ==================== UTILITY FUNCTIONS ====================
-
-/**
- * Build proper image URL
- */
 const buildMediaUrl = (mediaUrl: string | null | undefined): string => {
   if (!mediaUrl) return '';
-  
-  // If already a full URL
-  if (mediaUrl.startsWith('http')) {
-    return mediaUrl;
-  }
-  
-  // If it's a relative path
+  if (mediaUrl.startsWith('http')) return mediaUrl;
   const baseUrl = API_BASE_URL;
   const cleanUrl = mediaUrl.startsWith('/') ? mediaUrl : `/${mediaUrl}`;
   return `${baseUrl}${cleanUrl}`;
 };
 
-/**
- * Build avatar URL
- */
 const buildAvatarUrl = (user?: User): string => {
   if (!user?.avatar) {
-    return `https://ui-avatars.com/api/?name=${user?.name || 'User'}&background=random&size=150`;
+    return `https://ui-avatars.com/api/?name=${user?.name || 'User'}&background=0084FF&color=fff&size=150&bold=true`;
   }
-  
-  if (user.avatar.startsWith('http')) {
-    return user.avatar;
-  }
-  
+  if (user.avatar.startsWith('http')) return user.avatar;
   return `${API_BASE_URL}${user.avatar.startsWith('/') ? user.avatar : `/uploads/avatars/${user.avatar}`}`;
 };
 
-/**
- * Format file size
- */
 const formatFileSize = (bytes: number): string => {
   if (bytes === 0) return '0 Bytes';
   const k = 1024;
@@ -119,31 +153,139 @@ const formatFileSize = (bytes: number): string => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 };
 
+const formatTime = (dateStr?: string | number | Date): string => {
+  if (!dateStr) return '';
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diff = now.getTime() - date.getTime();
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  
+  if (days === 0) {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } else if (days === 1) {
+    return 'Yesterday';
+  } else if (days < 7) {
+    return date.toLocaleDateString([], { weekday: 'short' });
+  } else {
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }
+};
+
+const formatMessageTime = (dateStr?: string | number | Date): string => {
+  if (!dateStr) return '';
+  const date = new Date(dateStr);
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+};
+
+// ==================== ANIMATED COMPONENTS ====================
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+const PressableScale = ({ children, onPress, onLongPress, style, ...props }: any) => {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 0.95,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 1,
+      friction: 3,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  return (
+    <AnimatedPressable
+      onPress={onPress}
+      onLongPress={onLongPress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      style={[style, { transform: [{ scale: scaleAnim }] }]}
+      {...props}
+    >
+      {children}
+    </AnimatedPressable>
+  );
+};
+
+// ==================== TOAST COMPONENT ====================
+const Toast = memo(({ message, type }: { message: string; type: 'success' | 'error' | 'info' }) => {
+  const slideAnim = useRef(new Animated.Value(100)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        tension: 50,
+        friction: 8,
+        useNativeDriver: true,
+      }),
+      Animated.timing(opacityAnim, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
+
+  const backgroundColor = 
+    type === 'success' ? COLORS.success : 
+    type === 'error' ? COLORS.error : 
+    COLORS.primary;
+
+  const icon = 
+    type === 'success' ? 'checkmark-circle' : 
+    type === 'error' ? 'alert-circle' : 
+    'information-circle';
+
+  return (
+    <Animated.View
+      style={[
+        styles.toast,
+        {
+          backgroundColor,
+          transform: [{ translateY: slideAnim }],
+          opacity: opacityAnim,
+        },
+      ]}
+    >
+      <Ionicons name={icon} size={22} color="#FFF" />
+      <Text style={styles.toastText}>{message}</Text>
+    </Animated.View>
+  );
+});
+
 // ==================== IMAGE MESSAGE COMPONENT ====================
-const ImageMessage = memo(({ 
+const ImageMessage = memo(({
   message,
   isMyMessage,
   onPress,
-  onLongPress
-}: { 
+  onLongPress,
+  onReactionPress,
+  reactions,
+}: {
   message: Message;
   isMyMessage: boolean;
   onPress: () => void;
   onLongPress: () => void;
+  onReactionPress?: () => void;
+  reactions?: GroupedReaction[];
 }) => {
   const [imageLoading, setImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
-  
   const imageUrl = buildMediaUrl(message.media_url);
-  
+
   return (
-    <View>
-      <TouchableOpacity
+    <View style={styles.imageMessageWrapper}>
+      <PressableScale
         onPress={onPress}
         onLongPress={onLongPress}
-        activeOpacity={0.8}
         style={styles.imageMessageContainer}
-        delayLongPress={500}
       >
         <Image
           source={{ uri: imageUrl }}
@@ -156,47 +298,89 @@ const ImageMessage = memo(({
             setImageError(true);
           }}
         />
-        
+
         {imageLoading && (
           <View style={styles.imageLoadingOverlay}>
             <ActivityIndicator size="small" color="#FFF" />
           </View>
         )}
-        
+
         {imageError && (
           <View style={styles.imageErrorOverlay}>
-            <Ionicons name="alert-circle-outline" size={24} color="#FFF" />
-            <Text style={styles.imageErrorText}>Failed to load image</Text>
+            <Ionicons name="image-outline" size={32} color="#FFF" />
+            <Text style={styles.imageErrorText}>Failed to load</Text>
           </View>
         )}
-      </TouchableOpacity>
 
-      {message.message ? (
-        <View style={styles.imageCaptionContainer}>
-          <Text style={styles.imageCaption}>{message.message}</Text>
+        {message.message && (
+          <View style={styles.imageCaptionContainer}>
+            <Text style={styles.imageCaption}>{message.message}</Text>
+          </View>
+        )}
+      </PressableScale>
+
+      {reactions && reactions.length > 0 && (
+        <View style={[
+          styles.reactionsContainer,
+          isMyMessage && styles.reactionsContainerRight
+        ]}>
+          {reactions.map((reaction, index) => (
+            <TouchableOpacity
+              key={index}
+              style={[
+                styles.reactionBubble,
+                reaction.isReactedByMe && styles.reactionBubbleActive
+              ]}
+              onPress={onReactionPress}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.reactionEmoji}>{reaction.emoji}</Text>
+              {reaction.count > 1 && (
+                <Text style={styles.reactionCount}>{reaction.count}</Text>
+              )}
+            </TouchableOpacity>
+          ))}
         </View>
-      ) : null}
+      )}
     </View>
   );
 });
 
 // ==================== IMAGE PREVIEW MODAL ====================
-const ImagePreviewModal = memo(({ 
-  visible, 
-  imageUrl, 
-  onClose 
-}: { 
-  visible: boolean; 
-  imageUrl: string; 
+const ImagePreviewModal = memo(({
+  visible,
+  imageUrl,
+  onClose
+}: {
+  visible: boolean;
+  imageUrl: string;
   onClose: () => void;
 }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const scaleAnim = useRef(new Animated.Value(0.8)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (visible) {
       setLoading(true);
       setError(false);
+      Animated.parallel([
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          tension: 50,
+          friction: 7,
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacityAnim, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      scaleAnim.setValue(0.8);
+      opacityAnim.setValue(0);
     }
   }, [visible, imageUrl]);
 
@@ -204,244 +388,174 @@ const ImagePreviewModal = memo(({
     <Modal
       visible={visible}
       transparent={true}
-      animationType="fade"
+      animationType="none"
       onRequestClose={onClose}
     >
-      <TouchableWithoutFeedback onPress={onClose}>
-        <View style={styles.modalOverlay}>
-          <TouchableWithoutFeedback>
-            <View style={styles.modalContent}>
-              {/* Close Button */}
-              <TouchableOpacity 
-                style={styles.closeButton}
-                onPress={onClose}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="close" size={28} color="#FFF" />
-              </TouchableOpacity>
+      <Animated.View style={[styles.modalOverlay, { opacity: opacityAnim }]}>
+        <TouchableWithoutFeedback onPress={onClose}>
+          <View style={StyleSheet.absoluteFill} />
+        </TouchableWithoutFeedback>
 
-              {/* Image Container */}
-              <View style={styles.imageContainer}>
-                {loading && !error && (
-                  <View style={styles.imageLoading}>
-                    <ActivityIndicator size="large" color="#FFF" />
-                    <Text style={styles.loadingText}>Loading image...</Text>
-                  </View>
-                )}
+        <Animated.View
+          style={[
+            styles.modalContent,
+            { transform: [{ scale: scaleAnim }] }
+          ]}
+        >
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={onClose}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="close" size={28} color="#FFF" />
+          </TouchableOpacity>
 
-                {error && (
-                  <View style={styles.imageError}>
-                    <Ionicons name="alert-circle-outline" size={64} color="#FFF" />
-                    <Text style={styles.errorText}>Failed to load image</Text>
-                    <TouchableOpacity 
-                      style={styles.retryButton}
-                      onPress={() => {
-                        setError(false);
-                        setLoading(true);
-                      }}
-                    >
-                      <Text style={styles.retryButtonText}>Retry</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-
-                <Image
-                  source={{ uri: imageUrl }}
-                  style={styles.fullImage}
-                  resizeMode="contain"
-                  onLoadStart={() => setLoading(true)}
-                  onLoadEnd={() => setLoading(false)}
-                  onError={() => {
-                    setError(true);
-                    setLoading(false);
-                  }}
-                />
+          <View style={styles.imageContainer}>
+            {loading && !error && (
+              <View style={styles.imageLoading}>
+                <ActivityIndicator size="large" color="#FFF" />
+                <Text style={styles.loadingText}>Loading...</Text>
               </View>
-            </View>
-          </TouchableWithoutFeedback>
-        </View>
-      </TouchableWithoutFeedback>
+            )}
+
+            {error && (
+              <View style={styles.imageError}>
+                <Ionicons name="alert-circle-outline" size={64} color="#FFF" />
+                <Text style={styles.errorText}>Failed to load image</Text>
+                <TouchableOpacity
+                  style={styles.retryButton}
+                  onPress={() => {
+                    setError(false);
+                    setLoading(true);
+                  }}
+                >
+                  <Text style={styles.retryButtonText}>Retry</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <Image
+              source={{ uri: imageUrl }}
+              style={styles.fullImage}
+              resizeMode="contain"
+              onLoadStart={() => setLoading(true)}
+              onLoadEnd={() => setLoading(false)}
+              onError={() => {
+                setError(true);
+                setLoading(false);
+              }}
+            />
+          </View>
+        </Animated.View>
+      </Animated.View>
     </Modal>
   );
 });
 
-// ==================== MESSAGE ACTIONS MENU ====================
-interface MessageActionsMenuProps {
-  visible: boolean;
-  message: Message | null;
-  onClose: () => void;
-  onEdit: (message: Message) => void;
-  onDelete: (message: Message, type: 'me' | 'everyone') => void;
-  isMyMessage: boolean;
-}
+// ==================== EMOJI REACTION PICKER ====================
+const EMOJI_REACTIONS = ['❤️', '😂', '😮', '😢', '😠', '👍', '👎', '🔥'];
 
-// Thay thế phần MessageActionsMenu hiện tại bằng code này:
-
-const MessageActionsMenu = memo<MessageActionsMenuProps>(({
+const EmojiReactionPicker = memo(({
   visible,
-  message,
   onClose,
-  onEdit,
-  onDelete,
-  isMyMessage,
+  onEmojiSelect,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onEmojiSelect: (emoji: string) => void;
 }) => {
-  // Hiển thị ActionSheet cho iOS
-  const showActionSheet = useCallback(() => {
-    if (!message) return;
-    
-    const options = [];
-    const destructiveButtonIndexes = [];
-    
-    if (isMyMessage && message.message_type === 'text' && !message.deleted) {
-      options.push('Edit');
-    }
-    
-    if (isMyMessage) {
-      options.push('Delete for me');
-      options.push('Delete for everyone');
-      destructiveButtonIndexes.push(options.length - 2, options.length - 1);
-    } else {
-      options.push('Delete for me');
-      destructiveButtonIndexes.push(options.length - 1);
-    }
-    
-    options.push('Cancel');
-    const cancelButtonIndex = options.length - 1;
+  const slideAnim = useRef(new Animated.Value(100)).current;
 
-    ActionSheetIOS.showActionSheetWithOptions(
-      {
-        options,
-        cancelButtonIndex,
-        destructiveButtonIndex: destructiveButtonIndexes,
-      },
-      (buttonIndex) => {
-        if (buttonIndex === cancelButtonIndex) return;
-        
-        const selectedOption = options[buttonIndex];
-        
-        switch (selectedOption) {
-          case 'Edit':
-            onEdit(message);
-            break;
-          case 'Delete for me':
-            onDelete(message, 'me');
-            break;
-          case 'Delete for everyone':
-            onDelete(message, 'everyone');
-            break;
-        }
-        
-        onClose();
-      }
-    );
-  }, [message, isMyMessage, onEdit, onDelete, onClose]);
-
-  // Effect để hiển thị ActionSheet trên iOS
   useEffect(() => {
-    if (visible && Platform.OS === 'ios' && message) {
-      showActionSheet();
+    if (visible) {
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        tension: 65,
+        friction: 8,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      slideAnim.setValue(100);
     }
-  }, [visible, message, showActionSheet]);
+  }, [visible]);
 
-  // Android: hiển thị modal
-  if (Platform.OS === 'android' && visible && message) {
-    return (
-      <Modal
-        visible={visible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={onClose}
-      >
-        <TouchableWithoutFeedback onPress={onClose}>
-          <View style={styles.actionSheetOverlay}>
-            <View style={styles.actionSheetContainer}>
-              {isMyMessage && message.message_type === 'text' && !message.deleted && (
-                <TouchableOpacity
-                  style={styles.actionSheetButton}
+  if (!visible) return null;
+
+  return (
+    <TouchableWithoutFeedback onPress={onClose}>
+      <View style={styles.emojiPickerBackdrop}>
+        <TouchableWithoutFeedback>
+          <Animated.View
+            style={[
+              styles.emojiPickerContainer,
+              { transform: [{ translateY: slideAnim }] }
+            ]}
+          >
+            <View style={styles.emojiPickerHandle} />
+            <Text style={styles.emojiPickerTitle}>React to message</Text>
+            
+            <View style={styles.emojiPickerContent}>
+              {EMOJI_REACTIONS.map((emoji, index) => (
+                <PressableScale
+                  key={index}
                   onPress={() => {
-                    onEdit(message);
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    onEmojiSelect(emoji);
                     onClose();
                   }}
+                  style={styles.emojiButton}
                 >
-                  <Ionicons name="create-outline" size={20} color="#000" style={styles.actionSheetIcon} />
-                  <Text style={styles.actionSheetText}>Edit</Text>
-                </TouchableOpacity>
-              )}
-              
-              <TouchableOpacity
-                style={styles.actionSheetButton}
-                onPress={() => {
-                  onDelete(message, 'me');
-                  onClose();
-                }}
-              >
-                <Ionicons name="trash-outline" size={20} color="#FF3B30" style={styles.actionSheetIcon} />
-                <Text style={[styles.actionSheetText, styles.destructiveText]}>Delete for me</Text>
-              </TouchableOpacity>
-              
-              {isMyMessage && (
-                <TouchableOpacity
-                  style={styles.actionSheetButton}
-                  onPress={() => {
-                    onDelete(message, 'everyone');
-                    onClose();
-                  }}
-                >
-                  <Ionicons name="trash-bin-outline" size={20} color="#FF3B30" style={styles.actionSheetIcon} />
-                  <Text style={[styles.actionSheetText, styles.destructiveText]}>Delete for everyone</Text>
-                </TouchableOpacity>
-              )}
-              
-              <TouchableOpacity
-                style={[styles.actionSheetButton, styles.cancelButton]}
-                onPress={onClose}
-              >
-                <Text style={styles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
+                  <Text style={styles.emojiText}>{emoji}</Text>
+                </PressableScale>
+              ))}
             </View>
-          </View>
+          </Animated.View>
         </TouchableWithoutFeedback>
-      </Modal>
-    );
-  }
-
-  // iOS: không render gì cả vì đã sử dụng ActionSheetIOS
-  return null;
+      </View>
+    </TouchableWithoutFeedback>
+  );
 });
 
-// Đặt display name cho component
-MessageActionsMenu.displayName = 'MessageActionsMenu';
 // ==================== EDIT MESSAGE MODAL ====================
-interface EditMessageModalProps {
-  visible: boolean;
-  message: Message | null;
-  onClose: () => void;
-  onSave: (messageId: string, newMessage: string) => Promise<void>;
-}
-
-const EditMessageModal: React.FC<EditMessageModalProps> = ({
+const EditMessageModal = memo(({
   visible,
   message,
   onClose,
   onSave,
+}: {
+  visible: boolean;
+  message: Message | null;
+  onClose: () => void;
+  onSave: (messageId: string, newMessage: string) => Promise<void>;
 }) => {
   const [editingText, setEditingText] = useState('');
   const [saving, setSaving] = useState(false);
+  const slideAnim = useRef(new Animated.Value(height)).current;
 
   useEffect(() => {
     if (visible && message) {
       setEditingText(message.message);
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        tension: 65,
+        friction: 8,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      slideAnim.setValue(height);
     }
   }, [visible, message]);
 
   const handleSave = async () => {
     if (!message || !editingText.trim()) return;
-    
+
     setSaving(true);
     try {
       await onSave(message._id, editingText.trim());
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onClose();
     } catch (error) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       console.error('Error saving message:', error);
     } finally {
       setSaving(false);
@@ -452,20 +566,25 @@ const EditMessageModal: React.FC<EditMessageModalProps> = ({
     <Modal
       visible={visible}
       transparent={true}
-      animationType="slide"
+      animationType="none"
       onRequestClose={onClose}
     >
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={styles.editModalOverlay}>
           <TouchableWithoutFeedback>
-            <View style={styles.editModalContent}>
+            <Animated.View
+              style={[
+                styles.editModalContent,
+                { transform: [{ translateY: slideAnim }] }
+              ]}
+            >
               <View style={styles.editModalHeader}>
                 <Text style={styles.editModalTitle}>Edit Message</Text>
-                <TouchableOpacity onPress={onClose}>
-                  <Ionicons name="close" size={24} color="#000" />
+                <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <Ionicons name="close" size={24} color={COLORS.text} />
                 </TouchableOpacity>
               </View>
-              
+
               <TextInput
                 style={styles.editTextInput}
                 value={editingText}
@@ -473,18 +592,20 @@ const EditMessageModal: React.FC<EditMessageModalProps> = ({
                 multiline
                 autoFocus
                 placeholder="Edit your message..."
+                placeholderTextColor={COLORS.textLight}
                 maxLength={1000}
               />
-              
+
               <View style={styles.editModalFooter}>
                 <TouchableOpacity
                   style={styles.editCancelButton}
                   onPress={onClose}
                   disabled={saving}
+                  activeOpacity={0.7}
                 >
                   <Text style={styles.editCancelText}>Cancel</Text>
                 </TouchableOpacity>
-                
+
                 <TouchableOpacity
                   style={[
                     styles.editSaveButton,
@@ -492,6 +613,7 @@ const EditMessageModal: React.FC<EditMessageModalProps> = ({
                   ]}
                   onPress={handleSave}
                   disabled={!editingText.trim() || saving}
+                  activeOpacity={0.8}
                 >
                   {saving ? (
                     <ActivityIndicator size="small" color="#FFF" />
@@ -500,13 +622,238 @@ const EditMessageModal: React.FC<EditMessageModalProps> = ({
                   )}
                 </TouchableOpacity>
               </View>
-            </View>
+            </Animated.View>
           </TouchableWithoutFeedback>
         </View>
       </TouchableWithoutFeedback>
     </Modal>
   );
-};
+});
+
+// ==================== MESSAGE ACTIONS MODAL ====================
+const MessageActionsModal = memo(({
+  visible,
+  message,
+  isMyMessage,
+  onClose,
+  onEdit,
+  onDelete,
+  onReact,
+  onCopy,
+}: {
+  visible: boolean;
+  message: Message | null;
+  isMyMessage: boolean;
+  onClose: () => void;
+  onEdit: (message: Message) => void;
+  onDelete: (message: Message, type: 'me' | 'everyone') => void;
+  onReact: (message: Message) => void;
+  onCopy: (message: Message) => void;
+}) => {
+  const slideAnim = useRef(new Animated.Value(height)).current;
+
+  useEffect(() => {
+    if (visible) {
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        tension: 65,
+        friction: 8,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      slideAnim.setValue(height);
+    }
+  }, [visible]);
+
+  if (!visible || !message || Platform.OS === 'ios') return null;
+
+  const actionItems = [
+    {
+      label: 'React',
+      icon: 'heart-outline',
+      color: COLORS.primary,
+      onPress: () => {
+        onReact(message);
+        onClose();
+      },
+    },
+    ...(isMyMessage && message.message_type === 'text' && !message.deleted
+      ? [{
+          label: 'Edit',
+          icon: 'create-outline',
+          color: COLORS.text,
+          onPress: () => {
+            onEdit(message);
+            onClose();
+          },
+        }]
+      : []
+    ),
+    {
+      label: 'Copy',
+      icon: 'copy-outline',
+      color: COLORS.text,
+      onPress: () => {
+        onCopy(message);
+        onClose();
+      },
+    },
+    {
+      label: 'Delete for me',
+      icon: 'trash-outline',
+      color: COLORS.error,
+      onPress: () => {
+        onDelete(message, 'me');
+        onClose();
+      },
+    },
+    ...(isMyMessage
+      ? [{
+          label: 'Delete for everyone',
+          icon: 'trash-bin-outline',
+          color: COLORS.error,
+          onPress: () => {
+            onDelete(message, 'everyone');
+            onClose();
+          },
+        }]
+      : []
+    ),
+  ];
+
+  return (
+    <Modal
+      visible={visible && Platform.OS === 'android'}
+      transparent={true}
+      animationType="none"
+      onRequestClose={onClose}
+    >
+      <TouchableWithoutFeedback onPress={onClose}>
+        <View style={styles.actionSheetOverlay}>
+          <TouchableWithoutFeedback>
+            <Animated.View
+              style={[
+                styles.actionSheetContainer,
+                { transform: [{ translateY: slideAnim }] }
+              ]}
+            >
+              <View style={styles.actionSheetHandle} />
+              
+              {actionItems.map((item, index) => (
+                <TouchableOpacity
+                  key={index}
+                  style={styles.actionSheetButton}
+                  onPress={item.onPress}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name={item.icon as any} size={22} color={item.color} style={styles.actionSheetIcon} />
+                  <Text style={[styles.actionSheetText, { color: item.color }]}>{item.label}</Text>
+                </TouchableOpacity>
+              ))}
+
+              <TouchableOpacity
+                style={[styles.actionSheetButton, styles.cancelButton]}
+                onPress={onClose}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </Animated.View>
+          </TouchableWithoutFeedback>
+        </View>
+      </TouchableWithoutFeedback>
+    </Modal>
+  );
+});
+
+// ==================== REACTIONS VIEW MODAL ====================
+const ReactionsViewModal = memo(({
+  visible,
+  reactions,
+  onClose,
+}: {
+  visible: boolean;
+  reactions: GroupedReaction[];
+  onClose: () => void;
+}) => {
+  const scaleAnim = useRef(new Animated.Value(0.9)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (visible) {
+      Animated.parallel([
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          tension: 65,
+          friction: 7,
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacityAnim, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      scaleAnim.setValue(0.9);
+      opacityAnim.setValue(0);
+    }
+  }, [visible]);
+
+  return (
+    <Modal
+      visible={visible}
+      transparent={true}
+      animationType="none"
+      onRequestClose={onClose}
+    >
+      <Animated.View style={[styles.reactionsModalOverlay, { opacity: opacityAnim }]}>
+        <TouchableWithoutFeedback onPress={onClose}>
+          <View style={StyleSheet.absoluteFill} />
+        </TouchableWithoutFeedback>
+
+        <Animated.View
+          style={[
+            styles.reactionsModalContent,
+            { transform: [{ scale: scaleAnim }] }
+          ]}
+        >
+          <View style={styles.reactionsModalHeader}>
+            <Text style={styles.reactionsModalTitle}>Reactions</Text>
+            <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Ionicons name="close" size={24} color={COLORS.text} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.reactionsModalList} showsVerticalScrollIndicator={false}>
+            {reactions.map((reaction, index) => (
+              <View key={index} style={styles.reactionItem}>
+                <View style={styles.reactionItemEmojiContainer}>
+                  <Text style={styles.reactionItemEmoji}>{reaction.emoji}</Text>
+                  <Text style={styles.reactionItemCountBadge}>{reaction.count}</Text>
+                </View>
+                
+                <View style={styles.reactionItemUsers}>
+                  {reaction.users.map((user, userIndex) => (
+                    <View key={userIndex} style={styles.reactionUserItem}>
+                      <Image
+                        source={{ uri: buildAvatarUrl(user) }}
+                        style={styles.reactionUserAvatar}
+                      />
+                      <Text style={styles.reactionItemUserName} numberOfLines={1}>
+                        {user.name}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ))}
+          </ScrollView>
+        </Animated.View>
+      </Animated.View>
+    </Modal>
+  );
+});
 
 // ==================== MAIN COMPONENT ====================
 const MessageScreen = () => {
@@ -515,7 +862,9 @@ const MessageScreen = () => {
   const socketRef = useRef<Socket | null>(null);
   const selectedConvRef = useRef<Conversation | null>(null);
   const handlerRef = useRef<((msg: any) => void) | null>(null);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // State Management
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -529,17 +878,34 @@ const MessageScreen = () => {
   const [isSocketConnected, setIsSocketConnected] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
-  
-  // Image preview modal state
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState<'success' | 'error' | 'info'>('success');
+  const [toastVisible, setToastVisible] = useState(false);
+
+  // Modal & UI State
   const [previewImage, setPreviewImage] = useState<string | null>(null);
-  
-  // Message actions state
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   const [showActionsMenu, setShowActionsMenu] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showReactionsView, setShowReactionsView] = useState(false);
+  const [messageReactions, setMessageReactions] = useState<GroupedReaction[]>([]);
 
-  // Status pulse animation
+  // Online status
+  const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
+  const [lastSeen, setLastSeen] = useState<Record<string, string>>({});
   const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  // Toast notification handler
+  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToastMessage(message);
+    setToastType(type);
+    setToastVisible(true);
+
+    setTimeout(() => {
+      setToastVisible(false);
+    }, 3000);
+  }, []);
 
   // ==================== EFFECTS ====================
   useEffect(() => {
@@ -551,7 +917,7 @@ const MessageScreen = () => {
       Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, {
-            toValue: 0.6,
+            toValue: 0.7,
             duration: 1000,
             useNativeDriver: true
           }),
@@ -566,21 +932,6 @@ const MessageScreen = () => {
   }, [isSocketConnected]);
 
   // ==================== HELPER FUNCTIONS ====================
-  const safeFormatTime = useCallback((dateStr?: string | number | Date): string => {
-    if (!dateStr) return '';
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-    const oneDay = 24 * 60 * 60 * 1000;
-
-    if (diff < oneDay) {
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } else if (diff < oneDay * 7) {
-      return date.toLocaleDateString([], { weekday: 'short' });
-    }
-    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-  }, []);
-
   const isMyMessage = useCallback((message: Message): boolean => {
     return message.sender_id._id === currentUserId;
   }, [currentUserId]);
@@ -593,16 +944,53 @@ const MessageScreen = () => {
   const shouldShowAvatar = useCallback((message: Message, index: number): boolean => {
     const isMe = isMyMessage(message);
     if (isMe) return false;
-
     const nextMessage = messages[index + 1];
     if (!nextMessage) return true;
-
     return !isSameSender(message, nextMessage);
   }, [messages, isMyMessage, isSameSender]);
 
-  const scrollToBottom = useCallback(() => {
-    flatListRef.current?.scrollToEnd({ animated: true });
+  const scrollToBottom = useCallback((animated = true) => {
+    setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated });
+    }, 100);
   }, []);
+
+  // Typing indicator
+  const emitTypingStart = useCallback(() => {
+    if (socketRef.current?.connected && selectedConversation) {
+      socketRef.current.emit('typing_start', {
+        conversationId: selectedConversation._id,
+        userId: currentUserId,
+      });
+    }
+  }, [selectedConversation, currentUserId]);
+
+  const emitTypingStop = useCallback(() => {
+    if (socketRef.current?.connected && selectedConversation) {
+      socketRef.current.emit('typing_stop', {
+        conversationId: selectedConversation._id,
+        userId: currentUserId,
+      });
+    }
+  }, [selectedConversation, currentUserId]);
+
+  const handleTextChange = (text: string) => {
+    setNewMessage(text);
+
+    if (text.length > 0) {
+      emitTypingStart();
+      
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+      
+      typingTimeoutRef.current = setTimeout(() => {
+        emitTypingStop();
+      }, 1000);
+    } else {
+      emitTypingStop();
+    }
+  };
 
   // ==================== SOCKET HANDLING ====================
   handlerRef.current = (rawMsg: any) => {
@@ -627,11 +1015,14 @@ const MessageScreen = () => {
       edited_at: rawMsg.edited_at || rawMsg.message?.edited_at,
       deleted: rawMsg.deleted || rawMsg.message?.deleted || false,
       deleted_at: rawMsg.deleted_at || rawMsg.message?.deleted_at,
+      reactions: rawMsg.reactions || rawMsg.message?.reactions || [],
+      reactions_count: rawMsg.reactions_count || rawMsg.message?.reactions_count || 0,
     };
 
     const convId = normalizedMsg.conversation_id;
     const active = selectedConvRef.current;
 
+    // Update conversations list
     setConversations(prev => {
       const updated = prev.map(conv => {
         if (conv._id === convId) {
@@ -645,17 +1036,18 @@ const MessageScreen = () => {
         return conv;
       });
 
-      return [...updated].sort((a, b) => 
+      return [...updated].sort((a, b) =>
         new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime()
       );
     });
 
+    // Update messages list if active conversation
     if (active?._id === convId) {
       setMessages(prev => {
         if (prev.some(m => m._id === normalizedMsg._id)) return prev;
 
         if (isMyMessage(normalizedMsg)) {
-          const tempIdx = prev.findIndex(m => 
+          const tempIdx = prev.findIndex(m =>
             m._id && m._id.startsWith('temp_') && m.message === normalizedMsg.message
           );
           if (tempIdx !== -1) {
@@ -672,7 +1064,7 @@ const MessageScreen = () => {
         socketRef.current.emit('mark_as_read', { conversationId: convId });
       }
 
-      setTimeout(scrollToBottom, 150);
+      setTimeout(() => scrollToBottom(), 150);
     }
   };
 
@@ -699,11 +1091,7 @@ const MessageScreen = () => {
         setIsSocketConnected(false);
       });
 
-      socketRef.current.on('connect_error', (error) => {
-        console.error('❌ Socket connection error:', error);
-      });
-
-      // Socket events
+      // Message events
       socketRef.current.on('new_message', (data) => {
         handlerRef.current?.(data);
       });
@@ -720,7 +1108,7 @@ const MessageScreen = () => {
 
       socketRef.current.on('message_edited', (data) => {
         if (data.conversationId === selectedConvRef.current?._id) {
-          setMessages(prev => prev.map(msg => 
+          setMessages(prev => prev.map(msg =>
             msg._id === data.message._id ? data.message : msg
           ));
         }
@@ -728,12 +1116,42 @@ const MessageScreen = () => {
 
       socketRef.current.on('message_deleted', (data) => {
         if (data.conversationId === selectedConvRef.current?._id) {
-          setMessages(prev => prev.map(msg => 
+          setMessages(prev => prev.map(msg =>
             msg._id === data.message._id ? data.message : msg
           ));
         }
       });
 
+      // Reaction events
+      socketRef.current.on('reaction_added', (data) => {
+        if (data.conversationId === selectedConvRef.current?._id && data.message) {
+          setMessages(prev => prev.map(msg =>
+            msg._id === data.messageId
+              ? { 
+                  ...msg, 
+                  reactions: data.message.reactions || [],
+                  reactions_count: data.message.reactions_count || 0 
+                }
+              : msg
+          ));
+        }
+      });
+
+      socketRef.current.on('reaction_removed', (data) => {
+        if (data.conversationId === selectedConvRef.current?._id && data.message) {
+          setMessages(prev => prev.map(msg =>
+            msg._id === data.messageId
+              ? { 
+                  ...msg, 
+                  reactions: data.message.reactions || [],
+                  reactions_count: data.message.reactions_count || 0 
+                }
+              : msg
+          ));
+        }
+      });
+
+      // Typing events
       socketRef.current.on('typing_start', (data) => {
         if (data.conversationId === selectedConvRef.current?._id && data.userId !== currentUserId) {
           setTypingUsers(prev => [...new Set([...prev, data.userId])]);
@@ -746,12 +1164,32 @@ const MessageScreen = () => {
         }
       });
 
+      // Read receipts
       socketRef.current.on('messages_read', (data) => {
         if (data.conversationId === selectedConvRef.current?._id) {
           setMessages(prev => prev.map(msg => ({
             ...msg,
             read: msg.sender_id._id === currentUserId ? true : msg.read
           })));
+        }
+      });
+
+      // Online status
+      socketRef.current.on('user_online', (data) => {
+        setOnlineUsers(prev => new Set([...prev, data.userId]));
+      });
+
+      socketRef.current.on('user_offline', (data) => {
+        setOnlineUsers(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(data.userId);
+          return newSet;
+        });
+        if (data.lastSeen) {
+          setLastSeen(prev => ({
+            ...prev,
+            [data.userId]: data.lastSeen || ''
+          }));
         }
       });
 
@@ -776,13 +1214,14 @@ const MessageScreen = () => {
           last_message: conv.last_message,
           last_message_at: conv.last_message_at || conv.last_message?.createdAt,
           unread_count: conv.unread_count || 0,
-          medical_record_id: conv.medical_record_id
+          medical_record_id: conv.medical_record_id,
+          appointment_id: conv.appointment_id
         }));
         setConversations(formattedConversations);
       }
     } catch (error) {
       console.error('❌ Error loading conversations:', error);
-      Alert.alert('Error', 'Failed to load conversations');
+      showToast('Failed to load conversations', 'error');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -806,15 +1245,15 @@ const MessageScreen = () => {
           socketRef.current.emit('mark_as_read', { conversationId });
         }
 
-        setConversations(prev => prev.map(conv => 
+        setConversations(prev => prev.map(conv =>
           conv._id === conversationId ? { ...conv, unread_count: 0 } : conv
         ));
 
-        setTimeout(scrollToBottom, 300);
+        setTimeout(() => scrollToBottom(false), 300);
       }
     } catch (error) {
       console.error('❌ Error loading messages:', error);
-      Alert.alert('Error', 'Failed to load messages');
+      showToast('Failed to load messages', 'error');
     } finally {
       setMessageLoading(false);
     }
@@ -826,6 +1265,7 @@ const MessageScreen = () => {
     const msgText = newMessage.trim();
     setNewMessage('');
     setSending(true);
+    emitTypingStop();
 
     const tempId = `temp_${Date.now()}`;
     const tempMsg: Message = {
@@ -839,10 +1279,11 @@ const MessageScreen = () => {
       timestamp: new Date().toISOString(),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      status: 'sending',
     };
 
     setMessages(prev => [...prev, tempMsg]);
-    setTimeout(scrollToBottom, 100);
+    setTimeout(() => scrollToBottom(), 100);
 
     try {
       const token = await AsyncStorage.getItem('authToken');
@@ -854,7 +1295,6 @@ const MessageScreen = () => {
           message: msgText,
           messageType: 'text'
         });
-        setSending(false);
       } else {
         const response = await axios.post(
           `${API_ENDPOINT}/messages/send`,
@@ -869,12 +1309,14 @@ const MessageScreen = () => {
         if (response.data.success) {
           handlerRef.current?.(response.data.data?.message || response.data.data);
         }
-        setSending(false);
       }
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setSending(false);
     } catch (error) {
       console.error('❌ Error sending message:', error);
       setMessages(prev => prev.filter(m => m._id !== tempId));
-      Alert.alert('Error', 'Failed to send message');
+      showToast('Failed to send message', 'error');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       setSending(false);
     }
   };
@@ -882,7 +1324,7 @@ const MessageScreen = () => {
   const editMessage = async (messageId: string, newMessageText: string) => {
     try {
       const token = await AsyncStorage.getItem('authToken');
-      
+
       const response = await axios.patch(
         `${API_ENDPOINT}/messages/messages/${messageId}/edit`,
         { newMessage: newMessageText },
@@ -891,21 +1333,21 @@ const MessageScreen = () => {
 
       if (response.data.success) {
         const updatedMessage = response.data.data;
-        setMessages(prev => prev.map(msg => 
+        setMessages(prev => prev.map(msg =>
           msg._id === messageId ? { ...msg, ...updatedMessage } : msg
         ));
-        
-        setConversations(prev => prev.map(conv => 
-          conv._id === selectedConversation?._id 
+
+        setConversations(prev => prev.map(conv =>
+          conv._id === selectedConversation?._id
             ? { ...conv, last_message: updatedMessage }
             : conv
         ));
-        
-        Alert.alert('Success', 'Message updated successfully');
+
+        showToast('Message edited', 'success');
       }
     } catch (error) {
       console.error('❌ Error editing message:', error);
-      Alert.alert('Error', 'Failed to edit message');
+      showToast('Failed to edit message', 'error');
       throw error;
     }
   };
@@ -913,7 +1355,7 @@ const MessageScreen = () => {
   const deleteMessage = async (message: Message, type: 'me' | 'everyone') => {
     try {
       const token = await AsyncStorage.getItem('authToken');
-      
+
       const response = await axios.delete(
         `${API_ENDPOINT}/messages/messages/${message._id}`,
         {
@@ -925,13 +1367,13 @@ const MessageScreen = () => {
       if (response.data.success) {
         if (type === 'everyone') {
           const deletedMessage = response.data.data;
-          setMessages(prev => prev.map(msg => 
+          setMessages(prev => prev.map(msg =>
             msg._id === message._id ? { ...msg, ...deletedMessage } : msg
           ));
-          
+
           if (selectedConversation?.last_message?._id === message._id) {
-            setConversations(prev => prev.map(conv => 
-              conv._id === selectedConversation._id 
+            setConversations(prev => prev.map(conv =>
+              conv._id === selectedConversation._id
                 ? { ...conv, last_message: deletedMessage }
                 : conv
             ));
@@ -939,14 +1381,61 @@ const MessageScreen = () => {
         } else if (type === 'me') {
           setMessages(prev => prev.filter(msg => msg._id !== message._id));
         }
-        
-        Alert.alert('Success', 'Message deleted successfully');
+
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        showToast('Message deleted', 'success');
         return true;
       }
     } catch (error) {
       console.error('❌ Error deleting message:', error);
-      Alert.alert('Error', 'Failed to delete message');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      showToast('Failed to delete message', 'error');
       throw error;
+    }
+  };
+
+  const addReaction = async (messageId: string, emoji: string) => {
+    try {
+      const token = await AsyncStorage.getItem('authToken');
+
+      const response = await axios.post(
+        `${API_ENDPOINT}/messages/messages/${messageId}/react`,
+        { reaction: emoji },
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+
+      if (response.data.success) {
+        const updatedMessage = response.data.data.message;
+        setMessages(prev => prev.map(msg =>
+          msg._id === messageId ? updatedMessage : msg
+        ));
+
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        showToast(`Reacted with ${emoji}`, 'success');
+      }
+    } catch (error) {
+      console.error('❌ Error adding reaction:', error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      showToast('Failed to add reaction', 'error');
+    }
+  };
+
+  const getMessageReactions = async (messageId: string) => {
+    try {
+      const token = await AsyncStorage.getItem('authToken');
+
+      const response = await axios.get(
+        `${API_ENDPOINT}/messages/messages/${messageId}/reactions`,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+
+      if (response.data.success) {
+        setMessageReactions(response.data.data.reactions || []);
+        setShowReactionsView(true);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching reactions:', error);
+      showToast('Failed to load reactions', 'error');
     }
   };
 
@@ -957,7 +1446,7 @@ const MessageScreen = () => {
 
     try {
       const token = await AsyncStorage.getItem('authToken');
-      
+
       const formData = new FormData();
       formData.append('receiver_id', selectedConversation.participant._id);
       formData.append('message_type', mediaType);
@@ -983,14 +1472,14 @@ const MessageScreen = () => {
 
       if (response.data.success) {
         handlerRef.current?.(response.data.data);
-        
-        setTimeout(scrollToBottom, 150);
-        
-        Alert.alert('Success', 'Image sent successfully!');
+        setTimeout(() => scrollToBottom(), 150);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        showToast('Media sent!', 'success');
       }
     } catch (error: any) {
       console.error('❌ Error sending media:', error);
-      Alert.alert('Error', error.response?.data?.message || 'Failed to send media');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      showToast(error.response?.data?.message || 'Failed to send media', 'error');
     } finally {
       setUploadingMedia(false);
     }
@@ -1007,12 +1496,12 @@ const MessageScreen = () => {
       if (!result.canceled && result.assets[0]) {
         const asset = result.assets[0];
         const fileName = asset.fileName || `image_${Date.now()}.jpg`;
-        
+
         await sendMediaMessage('image', asset.uri, fileName, asset.mimeType || 'image/jpeg');
       }
     } catch (error) {
       console.error('❌ Error picking image:', error);
-      Alert.alert('Error', 'Failed to pick image');
+      showToast('Failed to pick image', 'error');
     }
   };
 
@@ -1025,7 +1514,7 @@ const MessageScreen = () => {
 
       Alert.alert(
         'Download File',
-        `Do you want to download "${fileName}"?`,
+        `Download "${fileName}"?`,
         [
           { text: 'Cancel', style: 'cancel' },
           {
@@ -1041,7 +1530,7 @@ const MessageScreen = () => {
                 const result = await downloadResumable.downloadAsync();
                 if (result && result.uri) {
                   const { uri } = result;
-                  Alert.alert('Success', `File saved to: ${uri}`);
+                  showToast('File downloaded!', 'success');
 
                   if (Platform.OS === 'android') {
                     await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
@@ -1050,10 +1539,10 @@ const MessageScreen = () => {
                     });
                   }
                 } else {
-                  Alert.alert('Error', 'Download failed');
+                  showToast('Download failed', 'error');
                 }
               } catch (error) {
-                Alert.alert('Error', 'Failed to download file');
+                showToast('Failed to download file', 'error');
               }
             }
           }
@@ -1061,14 +1550,71 @@ const MessageScreen = () => {
       );
     } catch (error) {
       console.error('❌ Error downloading file:', error);
-      Alert.alert('Error', 'Failed to download file');
+      showToast('Failed to download file', 'error');
     }
   };
 
-  // ==================== MESSAGE ACTIONS HANDLERS ====================
+  // ==================== MESSAGE ACTIONS ====================
   const handleMessageLongPress = (message: Message) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setSelectedMessage(message);
     setShowActionsMenu(true);
+
+    if (Platform.OS === 'ios') {
+      const options: string[] = [];
+      const destructiveButtonIndexes: number[] = [];
+
+      options.push('React');
+
+      if (isMyMessage(message) && message.message_type === 'text' && !message.deleted) {
+        options.push('Edit');
+      }
+
+      options.push('Copy');
+
+      if (isMyMessage(message)) {
+        options.push('Delete for me');
+        options.push('Delete for everyone');
+        destructiveButtonIndexes.push(options.length - 2, options.length - 1);
+      } else {
+        options.push('Delete for me');
+        destructiveButtonIndexes.push(options.length - 1);
+      }
+
+      options.push('Cancel');
+      const cancelButtonIndex = options.length - 1;
+
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options,
+          cancelButtonIndex,
+          destructiveButtonIndex: destructiveButtonIndexes,
+        },
+        (buttonIndex) => {
+          if (buttonIndex === cancelButtonIndex) return;
+
+          const selectedOption = options[buttonIndex];
+
+          switch (selectedOption) {
+            case 'React':
+              setShowEmojiPicker(true);
+              break;
+            case 'Edit':
+              handleEditMessage(message);
+              break;
+            case 'Copy':
+              handleCopyMessage(message);
+              break;
+            case 'Delete for me':
+              handleDeleteMessage(message, 'me');
+              break;
+            case 'Delete for everyone':
+              handleDeleteMessage(message, 'everyone');
+              break;
+          }
+        }
+      );
+    }
   };
 
   const handleEditMessage = (message: Message) => {
@@ -1077,10 +1623,41 @@ const MessageScreen = () => {
   };
 
   const handleDeleteMessage = async (message: Message, type: 'me' | 'everyone') => {
-    try {
-      await deleteMessage(message, type);
-    } catch (error) {
-      // Error already handled in deleteMessage function
+    Alert.alert(
+      'Delete Message',
+      `Delete this message for ${type === 'everyone' ? 'everyone' : 'you only'}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteMessage(message, type);
+            } catch (error) {
+              console.error('Error deleting message:', error);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleReactMessage = (message: Message) => {
+    setSelectedMessage(message);
+    setShowEmojiPicker(true);
+  };
+
+  const handleCopyMessage = async (message: Message) => {
+    await Clipboard.setStringAsync(message.message);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    showToast('Copied to clipboard', 'success');
+  };
+
+  const handleReactionSelect = async (emoji: string) => {
+    if (selectedMessage) {
+      await addReaction(selectedMessage._id, emoji);
+      setShowEmojiPicker(false);
     }
   };
 
@@ -1089,60 +1666,103 @@ const MessageScreen = () => {
     if (message.deleted) {
       return (
         <View style={styles.deletedMessageContainer}>
-          <Ionicons name="trash-outline" size={16} color="#999" />
-          <Text style={styles.deletedMessageText}>
-            This message was deleted
-          </Text>
+          <Ionicons name="ban-outline" size={14} color={COLORS.textLight} />
+          <Text style={styles.deletedMessageText}>Message deleted</Text>
         </View>
       );
     }
 
+    // Group reactions by emoji
+    const groupedReactions: Record<string, GroupedReaction> = {};
+    (message.reactions || []).forEach(reaction => {
+      if (!groupedReactions[reaction.emoji]) {
+        groupedReactions[reaction.emoji] = {
+          emoji: reaction.emoji,
+          count: 0,
+          users: [],
+          isReactedByMe: false
+        };
+      }
+      groupedReactions[reaction.emoji].count++;
+      groupedReactions[reaction.emoji].users.push(reaction.user_id);
+      if (reaction.user_id._id === currentUserId) {
+        groupedReactions[reaction.emoji].isReactedByMe = true;
+      }
+    });
+    const reactions = Object.values(groupedReactions);
+
     switch (message.message_type) {
       case 'image':
         const imageUrl = buildMediaUrl(message.media_url);
-        
+
         return (
           <ImageMessage
             message={message}
             isMyMessage={isMyMessage(message)}
             onPress={() => setPreviewImage(imageUrl)}
             onLongPress={() => handleMessageLongPress(message)}
+            onReactionPress={() => getMessageReactions(message._id)}
+            reactions={reactions}
           />
         );
 
       case 'file':
         return (
-          <TouchableOpacity
-            onPress={() => handleDownloadFile(message)}
-            onLongPress={() => handleMessageLongPress(message)}
-            style={styles.fileContainer}
-            activeOpacity={0.7}
-            delayLongPress={500}
-          >
-            <View style={styles.fileIconContainer}>
-              <Ionicons name="document-attach" size={32} color="#4A90E2" />
-            </View>
+          <View>
+            <PressableScale
+              onPress={() => handleDownloadFile(message)}
+              onLongPress={() => handleMessageLongPress(message)}
+              style={styles.fileContainer}
+            >
+              <View style={styles.fileIconContainer}>
+                <Ionicons name="document-attach" size={28} color={COLORS.primary} />
+              </View>
 
-            <View style={styles.fileInfoContainer}>
-              <Text style={styles.fileName} numberOfLines={2}>
-                {message.media_name || 'Download file'}
-              </Text>
-              
-              {message.media_size ? (
-                <Text style={styles.fileSize}>
-                  {formatFileSize(message.media_size)}
+              <View style={styles.fileInfoContainer}>
+                <Text style={styles.fileName} numberOfLines={2}>
+                  {message.media_name || 'Download file'}
                 </Text>
-              ) : null}
 
-              {message.message ? (
-                <Text style={styles.fileMessage} numberOfLines={2}>
-                  {message.message}
-                </Text>
-              ) : null}
-            </View>
+                {message.media_size && (
+                  <Text style={styles.fileSize}>
+                    {formatFileSize(message.media_size)}
+                  </Text>
+                )}
 
-            <Ionicons name="download-outline" size={24} color="#4A90E2" />
-          </TouchableOpacity>
+                {message.message && (
+                  <Text style={styles.fileMessage} numberOfLines={2}>
+                    {message.message}
+                  </Text>
+                )}
+              </View>
+
+              <Ionicons name="download-outline" size={20} color={COLORS.primary} />
+            </PressableScale>
+
+            {reactions.length > 0 && (
+              <View style={[
+                styles.reactionsContainer,
+                isMyMessage(message) && styles.reactionsContainerRight
+              ]}>
+                {reactions.map((reaction, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={[
+                      styles.reactionBubble,
+                      reaction.isReactedByMe && styles.reactionBubbleActive
+                    ]}
+                    onPress={() => getMessageReactions(message._id)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.reactionEmoji}>{reaction.emoji}</Text>
+                    {reaction.count > 1 && (
+                      <Text style={styles.reactionCount}>{reaction.count}</Text>
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
         );
 
       default:
@@ -1154,73 +1774,96 @@ const MessageScreen = () => {
             ]}>
               {message.message}
             </Text>
+
             {message.edited && (
               <Text style={[
                 styles.editedText,
                 isMyMessage(message) ? styles.myEditedText : styles.theirEditedText
               ]}>
-                (edited)
+                Edited
               </Text>
+            )}
+
+            {reactions.length > 0 && (
+              <View style={[
+                styles.reactionsContainer,
+                isMyMessage(message) && styles.reactionsContainerRight
+              ]}>
+                {reactions.map((reaction, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={[
+                      styles.reactionBubble,
+                      reaction.isReactedByMe && styles.reactionBubbleActive
+                    ]}
+                    onPress={() => getMessageReactions(message._id)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.reactionEmoji}>{reaction.emoji}</Text>
+                    {reaction.count > 1 && (
+                      <Text style={styles.reactionCount}>{reaction.count}</Text>
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
             )}
           </View>
         );
     }
   };
 
-  const renderMessageItem = ({ item, index }: { item: Message, index: number }) => {
+  const renderMessageItem = ({ item, index }: { item: Message; index: number }) => {
     const isMe = isMyMessage(item);
     const showAvatar = shouldShowAvatar(item, index);
-    const isLastInGroup = !isSameSender(item, messages[index + 1]);
+    const prevMessage = messages[index - 1];
+    const isFirstInGroup = !prevMessage || !isSameSender(prevMessage, item);
+    const nextMessage = messages[index + 1];
+    const isLastInGroup = !nextMessage || !isSameSender(item, nextMessage);
 
     return (
-      <TouchableOpacity
-        onLongPress={() => handleMessageLongPress(item)}
-        delayLongPress={500}
-        activeOpacity={0.9}
+      <View
         style={[
-          styles.messageContainer,
-          isMe ? styles.myMessageContainer : styles.theirMessageContainer
+          styles.messageRow,
+          isMe ? styles.myMessageRow : styles.theirMessageRow,
+          isFirstInGroup && styles.messageRowFirst,
         ]}
       >
-        {!isMe && showAvatar && (
-          <Image
-            source={{ uri: buildAvatarUrl(item.sender_id) }}
-            style={styles.messageAvatar}
-          />
+        {!isMe && (
+          <View style={styles.avatarContainer}>
+            {showAvatar ? (
+              <Image
+                source={{ uri: buildAvatarUrl(item.sender_id) }}
+                style={styles.messageAvatar}
+              />
+            ) : (
+              <View style={styles.avatarPlaceholder} />
+            )}
+          </View>
         )}
 
-        {!isMe && !showAvatar && (
-          <View style={styles.avatarPlaceholder} />
-        )}
-
-        <View style={styles.messageContentContainer}>
-          <View style={[
+        <PressableScale
+          onLongPress={() => handleMessageLongPress(item)}
+          style={[
             styles.messageBubble,
             isMe ? styles.myMessageBubble : styles.theirMessageBubble,
-            isLastInGroup && (isMe ? styles.myMessageBubbleGroup : styles.theirMessageBubbleGroup),
+            isFirstInGroup && (isMe ? styles.myMessageBubbleFirst : styles.theirMessageBubbleFirst),
+            isLastInGroup && (isMe ? styles.myMessageBubbleLast : styles.theirMessageBubbleLast),
             item.deleted && styles.deletedMessageBubble
-          ]}>
-            {renderMessageContent(item)}
+          ]}
+        >
+          {renderMessageContent(item)}
+        </PressableScale>
+
+        {isMe && isLastInGroup && !item.deleted && (
+          <View style={styles.readReceiptContainer}>
+            {item.read ? (
+              <Ionicons name="checkmark-done" size={16} color={COLORS.primary} />
+            ) : (
+              <Ionicons name="checkmark" size={16} color={COLORS.textLight} />
+            )}
           </View>
-
-          {isLastInGroup && !item.deleted && (
-            <View style={styles.messageMetaContainer}>
-              <Text style={styles.messageTime}>
-                {safeFormatTime(item.timestamp || item.createdAt)}
-              </Text>
-
-              {isMe && item.read && (
-                <View style={styles.readReceiptContainer}>
-                  <Image
-                    source={{ uri: buildAvatarUrl(item.receiver_id) }}
-                    style={styles.readReceiptAvatar}
-                  />
-                </View>
-              )}
-            </View>
-          )}
-        </View>
-      </TouchableOpacity>
+        )}
+      </View>
     );
   };
 
@@ -1246,33 +1889,39 @@ const MessageScreen = () => {
 
     return () => {
       socketRef.current?.disconnect();
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
     };
   }, []);
 
   // ==================== RENDER SELECTED CONVERSATION ====================
   if (selectedConversation) {
+    const participantOnline = onlineUsers.has(selectedConversation.participant._id);
+    const participantLastSeen = lastSeen[selectedConversation.participant._id];
+
     return (
       <SafeAreaView style={styles.safeArea}>
-        <StatusBar barStyle="dark-content" backgroundColor="#FFF" />
-        
-        {/* Image Preview Modal */}
+        <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
+
+        {/* Modals */}
         <ImagePreviewModal
           visible={!!previewImage}
           imageUrl={previewImage || ''}
           onClose={() => setPreviewImage(null)}
         />
 
-        {/* Message Actions Menu */}
-        <MessageActionsMenu
+        <MessageActionsModal
           visible={showActionsMenu}
           message={selectedMessage}
+          isMyMessage={selectedMessage ? isMyMessage(selectedMessage) : false}
           onClose={() => setShowActionsMenu(false)}
           onEdit={handleEditMessage}
           onDelete={handleDeleteMessage}
-          isMyMessage={selectedMessage ? isMyMessage(selectedMessage) : false}
+          onReact={handleReactMessage}
+          onCopy={handleCopyMessage}
         />
 
-        {/* Edit Message Modal */}
         <EditMessageModal
           visible={showEditModal}
           message={selectedMessage}
@@ -1283,16 +1932,30 @@ const MessageScreen = () => {
           onSave={editMessage}
         />
 
-        {/* Header */}
+        <EmojiReactionPicker
+          visible={showEmojiPicker}
+          onClose={() => setShowEmojiPicker(false)}
+          onEmojiSelect={handleReactionSelect}
+        />
+
+        <ReactionsViewModal
+          visible={showReactionsView}
+          reactions={messageReactions}
+          onClose={() => setShowReactionsView(false)}
+        />
+
+        {/* Chat Header */}
         <View style={styles.chatHeader}>
           <TouchableOpacity
             onPress={() => {
               setSelectedConversation(null);
               setMessages([]);
+              emitTypingStop();
             }}
             style={styles.headerBackButton}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Ionicons name="chevron-back" size={28} color="#000" />
+            <Ionicons name="chevron-back" size={28} color={COLORS.primary} />
           </TouchableOpacity>
 
           <View style={styles.headerUserInfo}>
@@ -1301,24 +1964,27 @@ const MessageScreen = () => {
                 source={{ uri: buildAvatarUrl(selectedConversation.participant) }}
                 style={styles.headerAvatar}
               />
-              {isSocketConnected && (
-                <Animated.View 
+              {isSocketConnected && participantOnline && (
+                <Animated.View
                   style={[
                     styles.headerStatusDot,
-                    styles.headerStatusDotActive,
                     { opacity: pulseAnim }
-                  ]} 
+                  ]}
                 />
               )}
             </View>
 
             <View style={styles.headerUserDetails}>
-              <Text style={styles.headerUserName}>
+              <Text style={styles.headerUserName} numberOfLines={1}>
                 {selectedConversation.participant.name}
               </Text>
               {typingUsers.length > 0 ? (
-                <Text style={styles.headerUserStatusTyping}>
-                  Typing...
+                <Text style={styles.headerUserStatusTyping}>Typing...</Text>
+              ) : participantOnline ? (
+                <Text style={styles.headerUserStatusOnline}>Active now</Text>
+              ) : participantLastSeen ? (
+                <Text style={styles.headerUserStatus}>
+                  Active {formatTime(participantLastSeen)}
                 </Text>
               ) : (
                 <Text style={styles.headerUserStatus}>
@@ -1329,11 +1995,14 @@ const MessageScreen = () => {
           </View>
 
           <View style={styles.headerActions}>
-            <TouchableOpacity style={styles.headerActionButton}>
-              <Ionicons name="call-outline" size={24} color="#4A90E2" />
+            <TouchableOpacity style={styles.headerActionButton} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Ionicons name="call-outline" size={22} color={COLORS.primary} />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.headerActionButton}>
-              <Ionicons name="videocam-outline" size={24} color="#4A90E2" />
+            <TouchableOpacity style={styles.headerActionButton} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Ionicons name="videocam-outline" size={24} color={COLORS.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.headerActionButton} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Ionicons name="information-circle-outline" size={24} color={COLORS.primary} />
             </TouchableOpacity>
           </View>
         </View>
@@ -1342,7 +2011,7 @@ const MessageScreen = () => {
         <View style={styles.chatContainer}>
           {messageLoading ? (
             <View style={styles.centerContainer}>
-              <ActivityIndicator size="large" color="#4A90E2" />
+              <ActivityIndicator size="large" color={COLORS.primary} />
             </View>
           ) : (
             <FlatList
@@ -1351,14 +2020,15 @@ const MessageScreen = () => {
               keyExtractor={(item, index) => item._id || index.toString()}
               renderItem={renderMessageItem}
               contentContainerStyle={styles.messagesListContent}
-              onContentSizeChange={scrollToBottom}
-              onLayout={scrollToBottom}
               showsVerticalScrollIndicator={false}
               ListEmptyComponent={
                 <View style={styles.emptyMessagesContainer}>
-                  <Ionicons name="chatbubbles-outline" size={64} color="#CCC" />
+                  <Ionicons name="chatbubble-ellipses-outline" size={64} color={COLORS.border} />
                   <Text style={styles.emptyMessagesText}>
-                    No messages yet. Start a conversation!
+                    No messages yet
+                  </Text>
+                  <Text style={styles.emptyMessagesSubtext}>
+                    Start the conversation!
                   </Text>
                 </View>
               }
@@ -1374,8 +2044,8 @@ const MessageScreen = () => {
           <View style={styles.inputContainer}>
             {uploadingMedia ? (
               <View style={styles.uploadingIndicator}>
-                <ActivityIndicator size="small" color="#4A90E2" />
-                <Text style={styles.uploadingText}>Uploading image...</Text>
+                <ActivityIndicator size="small" color={COLORS.primary} />
+                <Text style={styles.uploadingText}>Sending...</Text>
               </View>
             ) : (
               <>
@@ -1383,54 +2053,54 @@ const MessageScreen = () => {
                   onPress={pickImage}
                   style={styles.inputActionButton}
                   disabled={uploadingMedia}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                  <Ionicons name="image" size={28} color="#4A90E2" />
+                  <Ionicons name="images" size={24} color={COLORS.primary} />
                 </TouchableOpacity>
 
                 <View style={styles.textInputContainer}>
                   <TextInput
                     style={styles.textInput}
-                    placeholder="Type a message..."
-                    placeholderTextColor="#999"
+                    placeholder="Message..."
+                    placeholderTextColor={COLORS.textLight}
                     value={newMessage}
-                    onChangeText={setNewMessage}
+                    onChangeText={handleTextChange}
                     multiline
-                    onFocus={() => {
-                      if (socketRef.current?.connected && selectedConversation) {
-                        socketRef.current.emit('typing_start', {
-                          conversationId: selectedConversation._id
-                        });
-                      }
-                    }}
-                    onBlur={() => {
-                      if (socketRef.current?.connected && selectedConversation) {
-                        socketRef.current.emit('typing_stop', {
-                          conversationId: selectedConversation._id
-                        });
-                      }
-                    }}
+                    maxLength={1000}
                   />
-
-                  <TouchableOpacity style={styles.emojiButton}>
-                    <Ionicons name="happy-outline" size={24} color="#666" />
-                  </TouchableOpacity>
                 </View>
 
-                <TouchableOpacity
-                  onPress={sendTextMessage}
-                  style={styles.sendButton}
-                  disabled={!newMessage.trim() || sending}
-                >
-                  {sending ? (
-                    <ActivityIndicator size="small" color="#FFF" />
-                  ) : (
-                    <Ionicons name="send" size={20} color="#FFF" />
-                  )}
-                </TouchableOpacity>
+                {newMessage.trim() ? (
+                  <TouchableOpacity
+                    style={styles.sendButton}
+                    onPress={sendTextMessage}
+                    disabled={sending}
+                    activeOpacity={0.8}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    {sending ? (
+                      <ActivityIndicator size="small" color="#FFF" />
+                    ) : (
+                      <Ionicons name="send" size={18} color="#FFF" />
+                    )}
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.inputActionButton}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons name="happy-outline" size={24} color={COLORS.primary} />
+                  </TouchableOpacity>
+                )}
               </>
             )}
           </View>
         </KeyboardAvoidingView>
+
+        {/* Toast */}
+        {toastVisible && (
+          <Toast message={toastMessage} type={toastType} />
+        )}
       </SafeAreaView>
     );
   }
@@ -1438,33 +2108,35 @@ const MessageScreen = () => {
   // ==================== RENDER CONVERSATIONS LIST ====================
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFF" />
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
 
-      {/* Conversations Header */}
+      {/* Header */}
       <View style={styles.conversationsHeader}>
-        <TouchableOpacity
-          onPress={() => navigation.navigate('Home' as never)}
-          activeOpacity={0.8}
-          style={styles.homeButton}
-        >
-          <Ionicons name="home" size={24} color="#0084FF" />
-        </TouchableOpacity>
+        <View style={styles.headerLeft}>
+          <PressableScale
+            onPress={() => navigation.navigate('Home' as never)}
+            style={styles.homeButton}
+          >
+            <Ionicons name="arrow-back" size={24} color={COLORS.text} />
+          </PressableScale>
+          <Text style={styles.headerTitle}>Chats</Text>
+        </View>
 
-        <Text style={styles.headerTitle}>Chats</Text>
-
-        <TouchableOpacity style={styles.editButton}>
-          <Ionicons name="create-outline" size={24} color="#666" />
-        </TouchableOpacity>
+        <View style={styles.headerRight}>
+          <TouchableOpacity style={styles.headerIconButton} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Ionicons name="create-outline" size={24} color={COLORS.text} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Search Bar */}
       <View style={styles.searchContainer}>
         <View style={styles.searchInnerContainer}>
-          <Ionicons name="search" size={20} color="#666" />
+          <Ionicons name="search" size={18} color={COLORS.textLight} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search conversations..."
-            placeholderTextColor="#999"
+            placeholder="Search"
+            placeholderTextColor={COLORS.textLight}
           />
         </View>
       </View>
@@ -1472,7 +2144,7 @@ const MessageScreen = () => {
       {/* Conversations List */}
       {loading && !refreshing ? (
         <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color="#0084FF" />
+          <ActivityIndicator size="large" color={COLORS.primary} />
         </View>
       ) : (
         <FlatList
@@ -1486,38 +2158,40 @@ const MessageScreen = () => {
                 setRefreshing(true);
                 loadConversations();
               }}
-              colors={['#0084FF']}
-              tintColor="#0084FF"
+              colors={[COLORS.primary]}
+              tintColor={COLORS.primary}
             />
           }
           ListEmptyComponent={
             <View style={styles.emptyConversationsContainer}>
-              <Ionicons name="chatbubbles-outline" size={80} color="#DDD" />
+              <Ionicons name="chatbubbles-outline" size={80} color={COLORS.border} />
               <Text style={styles.emptyConversationsText}>
-                No conversations yet
+                No conversations
+              </Text>
+              <Text style={styles.emptyConversationsSubtext}>
+                Start chatting with your contacts
               </Text>
             </View>
           }
           renderItem={({ item }) => (
-            <TouchableOpacity
+            <PressableScale
               onPress={() => {
                 setSelectedConversation(item);
                 loadMessages(item._id);
               }}
               style={styles.conversationItem}
-              activeOpacity={0.7}
             >
               <View style={styles.conversationAvatarContainer}>
                 <Image
                   source={{ uri: buildAvatarUrl(item.participant) }}
                   style={styles.conversationAvatar}
                 />
-                {isSocketConnected && (
-                  <Animated.View 
+                {isSocketConnected && onlineUsers.has(item.participant._id) && (
+                  <Animated.View
                     style={[
-                      styles.conversationStatusRing,
+                      styles.conversationStatusDot,
                       { opacity: pulseAnim }
-                    ]} 
+                    ]}
                   />
                 )}
               </View>
@@ -1531,8 +2205,11 @@ const MessageScreen = () => {
                     {item.participant.name}
                   </Text>
 
-                  <Text style={styles.conversationTime}>
-                    {safeFormatTime(item.last_message_at)}
+                  <Text style={[
+                    styles.conversationTime,
+                    item.unread_count > 0 && styles.unreadConversationTime
+                  ]}>
+                    {formatTime(item.last_message_at)}
                   </Text>
                 </View>
 
@@ -1540,37 +2217,40 @@ const MessageScreen = () => {
                   <Text style={[
                     styles.conversationLastMessage,
                     item.unread_count > 0 && styles.unreadConversationLastMessage
-                  ]} numberOfLines={2}>
-                    {item.last_message?.deleted 
-                      ? 'This message was deleted'
-                      : item.last_message?.message_type === 'image' 
-                      ? '📷 Image' 
+                  ]} numberOfLines={1}>
+                    {item.last_message?.deleted
+                      ? 'Message deleted'
+                      : item.last_message?.message_type === 'image'
+                      ? '📷 Photo'
                       : item.last_message?.message_type === 'file'
                       ? '📎 File'
-                      : item.last_message?.message || 'Start a conversation'}
+                      : item.last_message?.message || 'Start chatting'}
                   </Text>
 
-                  {item.unread_count > 0 ? (
+                  {item.unread_count > 0 && (
                     <View style={styles.unreadBadge}>
                       <Text style={styles.unreadBadgeText}>
                         {item.unread_count > 99 ? '99+' : item.unread_count}
                       </Text>
                     </View>
-                  ) : (
-                    <Ionicons name="checkmark-done" size={16} color="#4A90E2" />
                   )}
                 </View>
 
                 {item.medical_record_id && (
                   <View style={styles.medicalRecordBadge}>
-                    <Ionicons name="document-text" size={12} color="#0084FF" />
-                    <Text style={styles.medicalRecordText}>Medical Record</Text>
+                    <Ionicons name="medical" size={12} color={COLORS.primary} />
+                    <Text style={styles.medicalRecordText}>Medical</Text>
                   </View>
                 )}
               </View>
-            </TouchableOpacity>
+            </PressableScale>
           )}
         />
+      )}
+
+      {/* Toast */}
+      {toastVisible && (
+        <Toast message={toastMessage} type={toastType} />
       )}
     </SafeAreaView>
   );
@@ -1581,7 +2261,7 @@ const styles = StyleSheet.create({
   // Base
   safeArea: {
     flex: 1,
-    backgroundColor: '#FFF',
+    backgroundColor: COLORS.background,
   },
   centerContainer: {
     flex: 1,
@@ -1589,92 +2269,125 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
-  // Conversations List
+  // Toast
+  toast: {
+    position: 'absolute',
+    bottom: 24,
+    left: 16,
+    right: 16,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  toastText: {
+    color: '#FFF',
+    fontSize: 15,
+    fontWeight: '500',
+    flex: 1,
+  },
+
+  // Conversations List Header
   conversationsHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: '#FFF',
+    backgroundColor: COLORS.background,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: COLORS.border,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    gap: 8,
   },
   headerTitle: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#000',
+    fontSize: 24,
+    fontWeight: '700',
+    color: COLORS.text,
+    letterSpacing: -0.5,
   },
   homeButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#F0F8FF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#0084FF',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 4,
-    borderWidth: 1,
-    borderColor: '#E1F0FF',
-  },
-  editButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: '#F0F0F0',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.backgroundSecondary,
     justifyContent: 'center',
     alignItems: 'center',
   },
+  headerIconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  // Search
   searchContainer: {
     paddingHorizontal: 16,
-    marginBottom: 16,
+    paddingVertical: 12,
+    backgroundColor: COLORS.background,
   },
   searchInnerContainer: {
     flexDirection: 'row',
-    backgroundColor: '#F0F0F0',
-    borderRadius: 12,
+    backgroundColor: COLORS.backgroundSecondary,
+    borderRadius: 10,
     paddingHorizontal: 12,
-    height: 44,
+    height: 36,
     alignItems: 'center',
   },
   searchInput: {
     flex: 1,
     marginLeft: 8,
-    fontSize: 16,
-    color: '#000',
+    fontSize: 15,
+    color: COLORS.text,
   },
+
+  // Conversations List
   conversationsListContent: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 0,
     paddingBottom: 20,
   },
   conversationItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
-    padding: 12,
-    borderRadius: 16,
-    backgroundColor: '#F8F9FA',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: COLORS.background,
   },
   conversationAvatarContainer: {
     position: 'relative',
     marginRight: 12,
   },
   conversationAvatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: SIZES.avatarLarge,
+    height: SIZES.avatarLarge,
+    borderRadius: SIZES.avatarLarge / 2,
   },
-  conversationStatusRing: {
+  conversationStatusDot: {
     position: 'absolute',
-    bottom: 0,
+    bottom: 2,
     right: 2,
     width: 14,
     height: 14,
     borderRadius: 7,
-    backgroundColor: '#31A24C',
+    backgroundColor: COLORS.online,
     borderWidth: 2,
-    borderColor: '#FFF',
+    borderColor: COLORS.background,
   },
   conversationContent: {
     flex: 1,
@@ -1688,16 +2401,20 @@ const styles = StyleSheet.create({
   conversationName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#050505',
+    color: COLORS.text,
     flex: 1,
   },
   unreadConversationName: {
     fontWeight: '700',
-    color: '#000',
   },
   conversationTime: {
-    fontSize: 12,
-    color: '#65676B',
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    marginLeft: 8,
+  },
+  unreadConversationTime: {
+    color: COLORS.primary,
+    fontWeight: '600',
   },
   conversationLastMessageRow: {
     flexDirection: 'row',
@@ -1706,27 +2423,27 @@ const styles = StyleSheet.create({
   },
   conversationLastMessage: {
     fontSize: 14,
-    color: '#65676B',
+    color: COLORS.textSecondary,
     flex: 1,
     marginRight: 8,
   },
   unreadConversationLastMessage: {
-    color: '#000',
+    color: COLORS.text,
     fontWeight: '600',
   },
   unreadBadge: {
-    backgroundColor: '#0084FF',
+    backgroundColor: COLORS.primary,
     borderRadius: 12,
-    minWidth: 24,
-    height: 24,
+    minWidth: 20,
+    height: 20,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 6,
   },
   unreadBadgeText: {
     color: '#FFF',
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '700',
   },
   medicalRecordBadge: {
     flexDirection: 'row',
@@ -1735,7 +2452,7 @@ const styles = StyleSheet.create({
   },
   medicalRecordText: {
     fontSize: 12,
-    color: '#0084FF',
+    color: COLORS.primary,
     marginLeft: 4,
     fontWeight: '500',
   },
@@ -1746,23 +2463,29 @@ const styles = StyleSheet.create({
     paddingTop: 100,
   },
   emptyConversationsText: {
-    fontSize: 16,
-    color: '#999',
-    marginTop: 12,
+    fontSize: 18,
+    color: COLORS.textSecondary,
+    marginTop: 16,
+    fontWeight: '600',
+  },
+  emptyConversationsSubtext: {
+    fontSize: 14,
+    color: COLORS.textLight,
+    marginTop: 8,
   },
 
-  // Chat Screen
+  // Chat Screen Header
   chatHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#E5E5E5',
-    backgroundColor: '#FFF',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.background,
   },
   headerBackButton: {
-    padding: 6,
+    padding: 4,
     marginRight: 4,
   },
   headerUserInfo: {
@@ -1772,12 +2495,12 @@ const styles = StyleSheet.create({
   },
   headerAvatarContainer: {
     position: 'relative',
-    marginRight: 12,
+    marginRight: 10,
   },
   headerAvatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: SIZES.avatarMedium,
+    height: SIZES.avatarMedium,
+    borderRadius: SIZES.avatarMedium / 2,
   },
   headerStatusDot: {
     position: 'absolute',
@@ -1786,40 +2509,45 @@ const styles = StyleSheet.create({
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: '#CCC',
+    backgroundColor: COLORS.online,
     borderWidth: 2,
-    borderColor: '#FFF',
-  },
-  headerStatusDotActive: {
-    backgroundColor: '#31A24C',
+    borderColor: COLORS.background,
   },
   headerUserDetails: {
     flex: 1,
   },
   headerUserName: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#000',
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.text,
     marginBottom: 2,
   },
   headerUserStatus: {
-    fontSize: 13,
-    color: '#65676B',
+    fontSize: 12,
+    color: COLORS.textSecondary,
+  },
+  headerUserStatusOnline: {
+    fontSize: 12,
+    color: COLORS.online,
+    fontWeight: '500',
   },
   headerUserStatusTyping: {
-    fontSize: 13,
-    color: '#0084FF',
+    fontSize: 12,
+    color: COLORS.primary,
     fontStyle: 'italic',
   },
   headerActions: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 4,
   },
   headerActionButton: {
     padding: 6,
   },
+
+  // Chat Container
   chatContainer: {
     flex: 1,
+    backgroundColor: COLORS.background,
   },
   messagesListContent: {
     paddingHorizontal: 12,
@@ -1833,71 +2561,85 @@ const styles = StyleSheet.create({
     minHeight: 400,
   },
   emptyMessagesText: {
-    fontSize: 16,
-    color: '#999',
-    marginTop: 12,
+    fontSize: 18,
+    color: COLORS.textSecondary,
+    marginTop: 16,
+    fontWeight: '600',
   },
-  messageContainer: {
+  emptyMessagesSubtext: {
+    fontSize: 14,
+    color: COLORS.textLight,
+    marginTop: 8,
+  },
+
+  // Messages
+  messageRow: {
     flexDirection: 'row',
-    marginBottom: 4,
+    marginBottom: 2,
     paddingHorizontal: 4,
   },
-  myMessageContainer: {
+  myMessageRow: {
     justifyContent: 'flex-end',
   },
-  theirMessageContainer: {
+  theirMessageRow: {
     justifyContent: 'flex-start',
   },
-  messageAvatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+  messageRowFirst: {
+    marginTop: 8,
+  },
+  avatarContainer: {
+    width: SIZES.avatarSmall,
     marginRight: 8,
     alignSelf: 'flex-end',
-    marginBottom: 2,
+  },
+  messageAvatar: {
+    width: SIZES.avatarSmall,
+    height: SIZES.avatarSmall,
+    borderRadius: SIZES.avatarSmall / 2,
   },
   avatarPlaceholder: {
-    width: 28,
-    height: 28,
-    marginRight: 8,
-  },
-  messageContentContainer: {
-    maxWidth: '75%',
+    width: SIZES.avatarSmall,
+    height: SIZES.avatarSmall,
   },
   messageBubble: {
-    borderRadius: 20,
-    padding: 12,
-    marginBottom: 2,
+    maxWidth: '75%',
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
   },
   myMessageBubble: {
-    backgroundColor: '#0084FF',
+    backgroundColor: COLORS.messageBubbleMe,
+  },
+  myMessageBubbleFirst: {
+    borderTopRightRadius: 18,
+  },
+  myMessageBubbleLast: {
     borderBottomRightRadius: 4,
   },
-  myMessageBubbleGroup: {
-    borderBottomRightRadius: 20,
-  },
   theirMessageBubble: {
-    backgroundColor: '#E4E6EB',
+    backgroundColor: COLORS.messageBubbleThem,
+  },
+  theirMessageBubbleFirst: {
+    borderTopLeftRadius: 18,
+  },
+  theirMessageBubbleLast: {
     borderBottomLeftRadius: 4,
   },
-  theirMessageBubbleGroup: {
-    borderBottomLeftRadius: 20,
-  },
   deletedMessageBubble: {
-    backgroundColor: 'rgba(228, 230, 235, 0.5)',
+    backgroundColor: COLORS.backgroundSecondary,
   },
   messageText: {
-    fontSize: 16,
-    lineHeight: 22,
+    fontSize: 15,
+    lineHeight: 20,
   },
   myMessageText: {
     color: '#FFF',
   },
   theirMessageText: {
-    color: '#050505',
+    color: COLORS.text,
   },
   editedText: {
-    fontSize: 12,
+    fontSize: 11,
     fontStyle: 'italic',
     marginTop: 2,
   },
@@ -1905,52 +2647,38 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.7)',
   },
   theirEditedText: {
-    color: 'rgba(101, 103, 107, 0.7)',
-  },
-  messageMetaContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    marginBottom: 8,
-  },
-  messageTime: {
-    fontSize: 12,
-    color: '#65676B',
-    marginRight: 6,
+    color: COLORS.textLight,
   },
   readReceiptContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  readReceiptAvatar: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
+    marginLeft: 4,
+    alignSelf: 'flex-end',
+    marginBottom: 4,
   },
 
   // Deleted Message
   deletedMessageContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
   },
   deletedMessageText: {
-    fontSize: 16,
-    color: '#999',
+    fontSize: 14,
+    color: COLORS.textLight,
     fontStyle: 'italic',
-    marginLeft: 4,
   },
 
-  // Media Message Styles
-  imageMessageContainer: {
+  // Image Message
+  imageMessageWrapper: {
     position: 'relative',
-    borderRadius: 18,
+  },
+  imageMessageContainer: {
+    borderRadius: 16,
     overflow: 'hidden',
   },
   mediaImage: {
     width: width * 0.6,
     height: width * 0.6,
-    borderRadius: 18,
-    backgroundColor: '#F0F0F0',
+    backgroundColor: COLORS.backgroundSecondary,
   },
   imageLoadingOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -1967,26 +2695,26 @@ const styles = StyleSheet.create({
   imageErrorText: {
     color: '#FFF',
     fontSize: 12,
-    marginTop: 4,
+    marginTop: 8,
   },
   imageCaptionContainer: {
-    marginTop: 4,
-    backgroundColor: 'rgba(0,0,0,0.05)',
-    padding: 8,
-    borderRadius: 12,
+    marginTop: 8,
+    paddingHorizontal: 8,
   },
   imageCaption: {
     fontSize: 14,
-    color: '#333',
+    color: COLORS.textSecondary,
   },
+
+  // File Message
   fileContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 12,
-    backgroundColor: '#FFF',
+    backgroundColor: COLORS.background,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#E5E5E5',
+    borderColor: COLORS.border,
     minWidth: width * 0.5,
   },
   fileIconContainer: {
@@ -1999,76 +2727,109 @@ const styles = StyleSheet.create({
   fileName: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#000',
+    color: COLORS.text,
     marginBottom: 4,
   },
   fileSize: {
     fontSize: 12,
-    color: '#666',
+    color: COLORS.textSecondary,
     marginBottom: 4,
   },
   fileMessage: {
     fontSize: 13,
-    color: '#666',
+    color: COLORS.textSecondary,
+  },
+
+  // Reactions
+  reactionsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 4,
+    gap: 4,
+  },
+  reactionsContainerRight: {
+    justifyContent: 'flex-end',
+  },
+  reactionBubble: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    gap: 3,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  reactionBubbleActive: {
+    backgroundColor: COLORS.primaryLight,
+    borderColor: COLORS.primary,
+  },
+  reactionEmoji: {
+    fontSize: 14,
+  },
+  reactionCount: {
+    fontSize: 11,
+    color: COLORS.textSecondary,
+    fontWeight: '600',
   },
 
   // Input Area
   inputContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    backgroundColor: '#FFF',
-    borderTopWidth: 0.5,
-    borderTopColor: '#E5E5E5',
+    paddingVertical: 8,
+    backgroundColor: COLORS.background,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: COLORS.border,
   },
   uploadingIndicator: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 10,
+    paddingVertical: 12,
   },
   uploadingText: {
     marginLeft: 12,
     fontSize: 14,
-    color: '#4A90E2',
+    color: COLORS.primary,
     fontWeight: '500',
   },
   inputActionButton: {
     padding: 8,
-    marginRight: 4,
+    marginBottom: 4,
   },
   textInputContainer: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F0F2F5',
+    backgroundColor: COLORS.backgroundSecondary,
     borderRadius: 20,
-    paddingHorizontal: 12,
-    marginHorizontal: 4,
-    minHeight: 40,
+    paddingHorizontal: 14,
+    marginHorizontal: 6,
+    minHeight: 36,
     maxHeight: 100,
+    justifyContent: 'center',
   },
   textInput: {
-    flex: 1,
-    color: '#000',
-    fontSize: 16,
+    fontSize: 15,
+    color: COLORS.text,
     paddingVertical: 8,
     maxHeight: 80,
   },
-  emojiButton: {
-    padding: 4,
-    marginLeft: 4,
-  },
   sendButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#0084FF',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 4,
+    marginBottom: 4,
   },
 
   // Image Preview Modal
@@ -2088,9 +2849,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: Platform.OS === 'ios' ? 50 : 20,
     right: 20,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
@@ -2131,7 +2892,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
     paddingHorizontal: 24,
     paddingVertical: 12,
-    backgroundColor: '#0084FF',
+    backgroundColor: COLORS.primary,
     borderRadius: 8,
   },
   retryButtonText: {
@@ -2140,63 +2901,115 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // Action Sheet Styles
+  // Emoji Picker
+  emojiPickerBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    justifyContent: 'flex-end',
+  },
+  emojiPickerContainer: {
+    backgroundColor: COLORS.background,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+    paddingTop: 12,
+  },
+  emojiPickerHandle: {
+    width: 36,
+    height: 4,
+    backgroundColor: COLORS.border,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  emojiPickerTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.text,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  emojiPickerContent: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-around',
+    paddingHorizontal: 20,
+  },
+  emojiButton: {
+    width: '20%',
+    aspectRatio: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 12,
+  },
+  emojiText: {
+    fontSize: 32,
+  },
+
+  // Action Sheet
   actionSheetOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
     justifyContent: 'flex-end',
   },
   actionSheetContainer: {
-    backgroundColor: '#FFF',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    paddingBottom: Platform.OS === 'ios' ? 34 : 16,
-    marginHorizontal: 8,
-    marginBottom: 8,
+    backgroundColor: COLORS.background,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+    paddingTop: 12,
+  },
+  actionSheetHandle: {
+    width: 36,
+    height: 4,
+    backgroundColor: COLORS.border,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 12,
   },
   actionSheetButton: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 16,
     paddingHorizontal: 20,
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#E5E5E5',
   },
   actionSheetIcon: {
-    marginRight: 12,
+    marginRight: 16,
   },
   actionSheetText: {
     fontSize: 16,
-    color: '#000',
-  },
-  destructiveText: {
-    color: '#FF3B30',
+    fontWeight: '500',
   },
   cancelButton: {
-    borderBottomWidth: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
     marginTop: 8,
+    paddingTop: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: COLORS.border,
+    justifyContent: 'center',
   },
   cancelText: {
     fontSize: 16,
-    color: '#007AFF',
+    color: COLORS.textSecondary,
     fontWeight: '600',
+    textAlign: 'center',
   },
 
-  // Edit Modal Styles
+  // Edit Modal
   editModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    justifyContent: 'flex-end',
   },
   editModalContent: {
-    backgroundColor: '#FFF',
-    borderRadius: 16,
-    width: '90%',
-    maxHeight: '80%',
+    backgroundColor: COLORS.background,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     padding: 20,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
   },
   editModalHeader: {
     flexDirection: 'row',
@@ -2207,17 +3020,18 @@ const styles = StyleSheet.create({
   editModalTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#000',
+    color: COLORS.text,
   },
   editTextInput: {
-    backgroundColor: '#F2F2F7',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
+    backgroundColor: COLORS.backgroundSecondary,
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 15,
     minHeight: 100,
     maxHeight: 200,
     textAlignVertical: 'top',
     marginBottom: 20,
+    color: COLORS.text,
   },
   editModalFooter: {
     flexDirection: 'row',
@@ -2226,25 +3040,98 @@ const styles = StyleSheet.create({
   },
   editCancelButton: {
     paddingHorizontal: 20,
-    paddingVertical: 10,
+    paddingVertical: 12,
   },
   editCancelText: {
     fontSize: 16,
-    color: '#666',
+    color: COLORS.textSecondary,
+    fontWeight: '600',
   },
   editSaveButton: {
-    backgroundColor: '#0084FF',
+    backgroundColor: COLORS.primary,
     paddingHorizontal: 24,
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderRadius: 8,
+    minWidth: 80,
+    alignItems: 'center',
   },
   editSaveButtonDisabled: {
-    backgroundColor: '#C7C7CC',
+    backgroundColor: COLORS.textLight,
   },
   editSaveText: {
     fontSize: 16,
     color: '#FFF',
     fontWeight: '600',
+  },
+
+  // Reactions View Modal
+  reactionsModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  reactionsModalContent: {
+    backgroundColor: COLORS.background,
+    borderRadius: 16,
+    width: '85%',
+    maxHeight: '70%',
+    padding: 20,
+  },
+  reactionsModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  reactionsModalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: COLORS.text,
+  },
+  reactionsModalList: {
+    maxHeight: 400,
+  },
+  reactionItem: {
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: COLORS.border,
+  },
+  reactionItemEmojiContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  reactionItemEmoji: {
+    fontSize: 24,
+    marginRight: 8,
+  },
+  reactionItemCountBadge: {
+    backgroundColor: COLORS.backgroundSecondary,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+  },
+  reactionItemUsers: {
+    gap: 8,
+  },
+  reactionUserItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  reactionUserAvatar: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+  },
+  reactionItemUserName: {
+    fontSize: 14,
+    color: COLORS.text,
+    fontWeight: '500',
   },
 });
 
