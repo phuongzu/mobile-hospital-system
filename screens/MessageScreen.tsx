@@ -36,35 +36,60 @@ import io, { Socket } from 'socket.io-client';
 const { width, height } = Dimensions.get('window');
 
 // ==================== CONSTANTS ====================
-const COLORS = {
-  primary: '#0084FF',
-  primaryDark: '#0066CC',
-  primaryLight: '#E7F3FF',
-  success: '#00C853',
-  error: '#FF3B30',
-  warning: '#FF9500',
+export const COLORS = {
+  // Primary - Medical Teal (trust, calm, health)
+  primary: '#0B9E8E',
+  primaryDark: '#077A6D',
+  primaryLight: '#E0F5F3',
+  primaryGradientStart: '#0DB8A6',
+  primaryGradientEnd: '#0B9E8E',
+
+  // Message Bubbles
+  messageBubbleMe: '#0B9E8E',       // teal for sent
+  messageBubbleMeEnd: '#0A8B7C',
+  messageBubbleThem: '#F0F4F8',     // cool gray for received
+
+  // Status Colors
+  success: '#2ECC87',
+  error: '#FF5252',
+  warning: '#FFB74D',
+  online: '#2ECC87',
+  offline: '#90A4AE',
+
+  // Backgrounds
   background: '#FFFFFF',
-  backgroundSecondary: '#F0F2F5',
-  text: '#050505',
-  textSecondary: '#65676B',
-  textLight: '#B0B3B8',
-  border: '#E4E6EB',
-  messageBubbleMe: '#0084FF',
-  messageBubbleThem: '#E4E6EB',
-  online: '#31A24C',
-  offline: '#8E8E93',
+  backgroundSecondary: '#F5F8FA',
+  backgroundChat: '#F0F4F8',        // subtle blue-gray chat bg
+  backgroundBubbleThem: '#EEF2F7',
+
+  // Text
+  text: '#1A2332',
+  textSecondary: '#5C7080',
+  textLight: '#A0B0BF',
+  textOnPrimary: '#FFFFFF',
+
+  // Borders & Dividers
+  border: '#E8EDF2',
+  divider: '#EDF1F5',
+
+  // Medical Accents
+  medicalRed: '#FF6B6B',
+  medicalBlue: '#4A90D9',
+  medicalGreen: '#2ECC87',
+  urgentOrange: '#FF9F43',
 };
 
-const SIZES = {
+export const SIZES = {
   avatarSmall: 32,
   avatarMedium: 40,
   avatarLarge: 56,
   iconSmall: 20,
   iconMedium: 24,
   iconLarge: 28,
-  borderRadius: 20,
+  borderRadius: 22,
   spacing: 12,
 };
+
 
 // ==================== INTERFACES ====================
 interface User {
@@ -105,6 +130,7 @@ interface Message {
   deleted_by?: string;
   reactions?: Reaction[];
   reactions_count?: number;
+  clientTempId?: string;
   status?: 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
 }
 
@@ -177,6 +203,29 @@ const formatMessageTime = (dateStr?: string | number | Date): string => {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
 
+// Helper function to group reactions
+const groupReactionsByEmoji = (reactions: Reaction[], currentUserId: string): GroupedReaction[] => {
+  const grouped: Record<string, GroupedReaction> = {};
+  
+  reactions.forEach(reaction => {
+    if (!grouped[reaction.emoji]) {
+      grouped[reaction.emoji] = {
+        emoji: reaction.emoji,
+        count: 0,
+        users: [],
+        isReactedByMe: false
+      };
+    }
+    grouped[reaction.emoji].count++;
+    grouped[reaction.emoji].users.push(reaction.user_id);
+    if (reaction.user_id._id === currentUserId) {
+      grouped[reaction.emoji].isReactedByMe = true;
+    }
+  });
+  
+  return Object.values(grouped);
+};
+
 // ==================== ANIMATED COMPONENTS ====================
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -213,7 +262,7 @@ const PressableScale = ({ children, onPress, onLongPress, style, ...props }: any
 };
 
 // ==================== TOAST COMPONENT ====================
-const Toast = memo(({ message, type }: { message: string; type: 'success' | 'error' | 'info' }) => {
+const Toast = memo(({ message, type, onHide }: { message: string; type: 'success' | 'error' | 'info'; onHide: () => void }) => {
   const slideAnim = useRef(new Animated.Value(100)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
 
@@ -231,6 +280,16 @@ const Toast = memo(({ message, type }: { message: string; type: 'success' | 'err
         useNativeDriver: true,
       }),
     ]).start();
+
+    const timer = setTimeout(() => {
+      Animated.timing(opacityAnim, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }).start(() => onHide());
+    }, 2800);
+
+    return () => clearTimeout(timer);
   }, []);
 
   const backgroundColor = 
@@ -281,7 +340,7 @@ const ImageMessage = memo(({
   const imageUrl = buildMediaUrl(message.media_url);
 
   return (
-    <View style={styles.imageMessageWrapper}>
+    <View>
       <PressableScale
         onPress={onPress}
         onLongPress={onLongPress}
@@ -318,30 +377,6 @@ const ImageMessage = memo(({
           </View>
         )}
       </PressableScale>
-
-      {reactions && reactions.length > 0 && (
-        <View style={[
-          styles.reactionsContainer,
-          isMyMessage && styles.reactionsContainerRight
-        ]}>
-          {reactions.map((reaction, index) => (
-            <TouchableOpacity
-              key={index}
-              style={[
-                styles.reactionBubble,
-                reaction.isReactedByMe && styles.reactionBubbleActive
-              ]}
-              onPress={onReactionPress}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.reactionEmoji}>{reaction.emoji}</Text>
-              {reaction.count > 1 && (
-                <Text style={styles.reactionCount}>{reaction.count}</Text>
-              )}
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
     </View>
   );
 });
@@ -382,7 +417,7 @@ const ImagePreviewModal = memo(({
       scaleAnim.setValue(0.8);
       opacityAnim.setValue(0);
     }
-  }, [visible, imageUrl]);
+  }, [visible]);
 
   return (
     <Modal
@@ -414,7 +449,6 @@ const ImagePreviewModal = memo(({
             {loading && !error && (
               <View style={styles.imageLoading}>
                 <ActivityIndicator size="large" color="#FFF" />
-                <Text style={styles.loadingText}>Loading...</Text>
               </View>
             )}
 
@@ -464,7 +498,7 @@ const EmojiReactionPicker = memo(({
   onClose: () => void;
   onEmojiSelect: (emoji: string) => void;
 }) => {
-  const slideAnim = useRef(new Animated.Value(100)).current;
+  const slideAnim = useRef(new Animated.Value(300)).current;
 
   useEffect(() => {
     if (visible) {
@@ -475,44 +509,51 @@ const EmojiReactionPicker = memo(({
         useNativeDriver: true,
       }).start();
     } else {
-      slideAnim.setValue(100);
+      slideAnim.setValue(300);
     }
   }, [visible]);
 
   if (!visible) return null;
 
   return (
-    <TouchableWithoutFeedback onPress={onClose}>
-      <View style={styles.emojiPickerBackdrop}>
-        <TouchableWithoutFeedback>
-          <Animated.View
-            style={[
-              styles.emojiPickerContainer,
-              { transform: [{ translateY: slideAnim }] }
-            ]}
-          >
-            <View style={styles.emojiPickerHandle} />
-            <Text style={styles.emojiPickerTitle}>React to message</Text>
-            
-            <View style={styles.emojiPickerContent}>
-              {EMOJI_REACTIONS.map((emoji, index) => (
-                <PressableScale
-                  key={index}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    onEmojiSelect(emoji);
-                    onClose();
-                  }}
-                  style={styles.emojiButton}
-                >
-                  <Text style={styles.emojiText}>{emoji}</Text>
-                </PressableScale>
-              ))}
-            </View>
-          </Animated.View>
-        </TouchableWithoutFeedback>
-      </View>
-    </TouchableWithoutFeedback>
+    <Modal
+      visible={visible}
+      transparent={true}
+      animationType="none"
+      onRequestClose={onClose}
+    >
+      <TouchableWithoutFeedback onPress={onClose}>
+        <View style={styles.emojiPickerBackdrop}>
+          <TouchableWithoutFeedback>
+            <Animated.View
+              style={[
+                styles.emojiPickerContainer,
+                { transform: [{ translateY: slideAnim }] }
+              ]}
+            >
+              <View style={styles.emojiPickerHandle} />
+              <Text style={styles.emojiPickerTitle}>React to message</Text>
+              
+              <View style={styles.emojiPickerContent}>
+                {EMOJI_REACTIONS.map((emoji, index) => (
+                  <PressableScale
+                    key={index}
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      onEmojiSelect(emoji);
+                      onClose();
+                    }}
+                    style={styles.emojiButton}
+                  >
+                    <Text style={styles.emojiText}>{emoji}</Text>
+                  </PressableScale>
+                ))}
+              </View>
+            </Animated.View>
+          </TouchableWithoutFeedback>
+        </View>
+      </TouchableWithoutFeedback>
+    </Modal>
   );
 });
 
@@ -800,6 +841,8 @@ const ReactionsViewModal = memo(({
     }
   }, [visible]);
 
+  if (!visible) return null;
+
   return (
     <Modal
       visible={visible}
@@ -830,7 +873,7 @@ const ReactionsViewModal = memo(({
               <View key={index} style={styles.reactionItem}>
                 <View style={styles.reactionItemEmojiContainer}>
                   <Text style={styles.reactionItemEmoji}>{reaction.emoji}</Text>
-                  <Text style={styles.reactionItemCountBadge}>{reaction.count}</Text>
+                  <Text style={styles.reactionItemCount}>{reaction.count}</Text>
                 </View>
                 
                 <View style={styles.reactionItemUsers}>
@@ -901,10 +944,10 @@ const MessageScreen = () => {
     setToastMessage(message);
     setToastType(type);
     setToastVisible(true);
+  }, []);
 
-    setTimeout(() => {
-      setToastVisible(false);
-    }, 3000);
+  const hideToast = useCallback(() => {
+    setToastVisible(false);
   }, []);
 
   // ==================== EFFECTS ====================
@@ -933,12 +976,12 @@ const MessageScreen = () => {
 
   // ==================== HELPER FUNCTIONS ====================
   const isMyMessage = useCallback((message: Message): boolean => {
-    return message.sender_id._id === currentUserId;
+    return message.sender_id?._id === currentUserId;
   }, [currentUserId]);
 
   const isSameSender = useCallback((currentMsg: Message, nextMsg?: Message): boolean => {
     if (!nextMsg) return false;
-    return currentMsg.sender_id._id === nextMsg.sender_id._id;
+    return currentMsg.sender_id?._id === nextMsg.sender_id?._id;
   }, []);
 
   const shouldShowAvatar = useCallback((message: Message, index: number): boolean => {
@@ -954,6 +997,13 @@ const MessageScreen = () => {
       flatListRef.current?.scrollToEnd({ animated });
     }, 100);
   }, []);
+
+  const hasUserReacted = useCallback((message: Message, emoji: string): boolean => {
+    if (!message.reactions) return false;
+    return message.reactions.some(
+      reaction => reaction.emoji === emoji && reaction.user_id?._id === currentUserId
+    );
+  }, [currentUserId]);
 
   // Typing indicator
   const emitTypingStart = useCallback(() => {
@@ -998,6 +1048,7 @@ const MessageScreen = () => {
 
     const normalizedMsg: Message = {
       _id: rawMsg._id || rawMsg.message?._id,
+      clientTempId: rawMsg.clientTempId,
       conversation_id: rawMsg.conversation_id || rawMsg.conversationId || rawMsg.message?.conversation_id,
       sender_id: rawMsg.sender_id || rawMsg.senderId || rawMsg.message?.sender_id,
       receiver_id: rawMsg.receiver_id || rawMsg.receiverId || rawMsg.message?.receiver_id,
@@ -1068,13 +1119,13 @@ const MessageScreen = () => {
     }
   };
 
-  const connectSocket = async () => {
+  const connectSocket = async (userId: string) => {
     try {
       const token = await AsyncStorage.getItem('authToken');
       if (!token || socketRef.current?.connected) return;
 
       socketRef.current = io(API_BASE_URL, {
-        auth: { token },
+        auth: { token, userId },
         transports: ['websocket'],
         reconnection: true,
         reconnectionAttempts: 5,
@@ -1082,7 +1133,7 @@ const MessageScreen = () => {
       });
 
       socketRef.current.on('connect', () => {
-        console.log('✅ Socket connected');
+        console.log('✅ Socket connected', userId);
         setIsSocketConnected(true);
       });
 
@@ -1103,6 +1154,10 @@ const MessageScreen = () => {
       socketRef.current.on('message_sent', (data) => {
         if (data.success) {
           handlerRef.current?.(data.message || data.data?.message);
+          setSending(false);
+        } else {
+          setSending(false);
+          showToast('Failed to send', 'error');
         }
       });
 
@@ -1116,21 +1171,25 @@ const MessageScreen = () => {
 
       socketRef.current.on('message_deleted', (data) => {
         if (data.conversationId === selectedConvRef.current?._id) {
-          setMessages(prev => prev.map(msg =>
-            msg._id === data.message._id ? data.message : msg
-          ));
+          if (data.type === 'everyone') {
+            setMessages(prev => prev.map(msg =>
+              msg._id === data.message._id ? data.message : msg
+            ));
+          } else {
+            setMessages(prev => prev.filter(msg => msg._id !== data.message._id));
+          }
         }
       });
 
       // Reaction events
       socketRef.current.on('reaction_added', (data) => {
-        if (data.conversationId === selectedConvRef.current?._id && data.message) {
+        if (data.conversationId === selectedConvRef.current?._id) {
           setMessages(prev => prev.map(msg =>
             msg._id === data.messageId
               ? { 
                   ...msg, 
-                  reactions: data.message.reactions || [],
-                  reactions_count: data.message.reactions_count || 0 
+                  reactions: data.reactions || [],
+                  reactions_count: data.reactions?.length || 0 
                 }
               : msg
           ));
@@ -1138,13 +1197,13 @@ const MessageScreen = () => {
       });
 
       socketRef.current.on('reaction_removed', (data) => {
-        if (data.conversationId === selectedConvRef.current?._id && data.message) {
+        if (data.conversationId === selectedConvRef.current?._id) {
           setMessages(prev => prev.map(msg =>
             msg._id === data.messageId
               ? { 
                   ...msg, 
-                  reactions: data.message.reactions || [],
-                  reactions_count: data.message.reactions_count || 0 
+                  reactions: data.reactions || [],
+                  reactions_count: data.reactions?.length || 0 
                 }
               : msg
           ));
@@ -1169,7 +1228,7 @@ const MessageScreen = () => {
         if (data.conversationId === selectedConvRef.current?._id) {
           setMessages(prev => prev.map(msg => ({
             ...msg,
-            read: msg.sender_id._id === currentUserId ? true : msg.read
+            read: msg.sender_id?._id === currentUserId ? true : msg.read
           })));
         }
       });
@@ -1263,13 +1322,15 @@ const MessageScreen = () => {
     if (!newMessage.trim() || !selectedConversation || sending) return;
 
     const msgText = newMessage.trim();
+    const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
     setNewMessage('');
     setSending(true);
     emitTypingStop();
 
-    const tempId = `temp_${Date.now()}`;
     const tempMsg: Message = {
       _id: tempId,
+      clientTempId: tempId,
       conversation_id: selectedConversation._id,
       sender_id: currentUser || { _id: currentUserId, name: 'You', role: 'patient' },
       receiver_id: selectedConversation.participant,
@@ -1293,7 +1354,8 @@ const MessageScreen = () => {
           conversationId: selectedConversation._id,
           receiverId: selectedConversation.participant._id,
           message: msgText,
-          messageType: 'text'
+          messageType: 'text',
+          clientTempId: tempId
         });
       } else {
         const response = await axios.post(
@@ -1301,7 +1363,8 @@ const MessageScreen = () => {
           {
             receiver_id: selectedConversation.participant._id,
             message: msgText,
-            message_type: 'text'
+            message_type: 'text',
+            clientTempId: tempId
           },
           { headers: { 'Authorization': `Bearer ${token}` } }
         );
@@ -1311,7 +1374,6 @@ const MessageScreen = () => {
         }
       }
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      setSending(false);
     } catch (error) {
       console.error('❌ Error sending message:', error);
       setMessages(prev => prev.filter(m => m._id !== tempId));
@@ -1326,7 +1388,7 @@ const MessageScreen = () => {
       const token = await AsyncStorage.getItem('authToken');
 
       const response = await axios.patch(
-        `${API_ENDPOINT}/messages/messages/${messageId}/edit`,
+        `${API_ENDPOINT}/messages/${messageId}/edit`,
         { newMessage: newMessageText },
         { headers: { 'Authorization': `Bearer ${token}` } }
       );
@@ -1357,7 +1419,7 @@ const MessageScreen = () => {
       const token = await AsyncStorage.getItem('authToken');
 
       const response = await axios.delete(
-        `${API_ENDPOINT}/messages/messages/${message._id}`,
+        `${API_ENDPOINT}/messages/${message._id}`,
         {
           headers: { 'Authorization': `Bearer ${token}` },
           data: { type }
@@ -1399,7 +1461,7 @@ const MessageScreen = () => {
       const token = await AsyncStorage.getItem('authToken');
 
       const response = await axios.post(
-        `${API_ENDPOINT}/messages/messages/${messageId}/react`,
+        `${API_ENDPOINT}/messages/${messageId}/react`,
         { reaction: emoji },
         { headers: { 'Authorization': `Bearer ${token}` } }
       );
@@ -1424,15 +1486,19 @@ const MessageScreen = () => {
     try {
       const token = await AsyncStorage.getItem('authToken');
 
+      const convIdParam = selectedConversation?._id ? `?conversationId=${selectedConversation._id}` : '';
       const response = await axios.get(
-        `${API_ENDPOINT}/messages/messages/${messageId}/reactions`,
+        `${API_ENDPOINT}/messages/${messageId}/reactions${convIdParam}`,
         { headers: { 'Authorization': `Bearer ${token}` } }
       );
 
+      console.debug('Fetch reactions response:', response.data);
+
       if (response.data.success) {
-        setMessageReactions(response.data.data.reactions || []);
-        setShowReactionsView(true);
-      }
+          const reactions = response.data.data.reactions || [];
+          setMessageReactions(reactions);
+          setShowReactionsView(true);
+        }
     } catch (error) {
       console.error('❌ Error fetching reactions:', error);
       showToast('Failed to load reactions', 'error');
@@ -1658,7 +1724,16 @@ const MessageScreen = () => {
     if (selectedMessage) {
       await addReaction(selectedMessage._id, emoji);
       setShowEmojiPicker(false);
+      
+      // Refresh messages to show new reaction
+      if (selectedConversation) {
+        loadMessages(selectedConversation._id);
+      }
     }
+  };
+
+  const handleViewReactions = (message: Message) => {
+    getMessageReactions(message._id);
   };
 
   // ==================== RENDER FUNCTIONS ====================
@@ -1672,25 +1747,6 @@ const MessageScreen = () => {
       );
     }
 
-    // Group reactions by emoji
-    const groupedReactions: Record<string, GroupedReaction> = {};
-    (message.reactions || []).forEach(reaction => {
-      if (!groupedReactions[reaction.emoji]) {
-        groupedReactions[reaction.emoji] = {
-          emoji: reaction.emoji,
-          count: 0,
-          users: [],
-          isReactedByMe: false
-        };
-      }
-      groupedReactions[reaction.emoji].count++;
-      groupedReactions[reaction.emoji].users.push(reaction.user_id);
-      if (reaction.user_id._id === currentUserId) {
-        groupedReactions[reaction.emoji].isReactedByMe = true;
-      }
-    });
-    const reactions = Object.values(groupedReactions);
-
     switch (message.message_type) {
       case 'image':
         const imageUrl = buildMediaUrl(message.media_url);
@@ -1701,8 +1757,6 @@ const MessageScreen = () => {
             isMyMessage={isMyMessage(message)}
             onPress={() => setPreviewImage(imageUrl)}
             onLongPress={() => handleMessageLongPress(message)}
-            onReactionPress={() => getMessageReactions(message._id)}
-            reactions={reactions}
           />
         );
 
@@ -1738,30 +1792,6 @@ const MessageScreen = () => {
 
               <Ionicons name="download-outline" size={20} color={COLORS.primary} />
             </PressableScale>
-
-            {reactions.length > 0 && (
-              <View style={[
-                styles.reactionsContainer,
-                isMyMessage(message) && styles.reactionsContainerRight
-              ]}>
-                {reactions.map((reaction, index) => (
-                  <TouchableOpacity
-                    key={index}
-                    style={[
-                      styles.reactionBubble,
-                      reaction.isReactedByMe && styles.reactionBubbleActive
-                    ]}
-                    onPress={() => getMessageReactions(message._id)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.reactionEmoji}>{reaction.emoji}</Text>
-                    {reaction.count > 1 && (
-                      <Text style={styles.reactionCount}>{reaction.count}</Text>
-                    )}
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
           </View>
         );
 
@@ -1783,30 +1813,6 @@ const MessageScreen = () => {
                 Edited
               </Text>
             )}
-
-            {reactions.length > 0 && (
-              <View style={[
-                styles.reactionsContainer,
-                isMyMessage(message) && styles.reactionsContainerRight
-              ]}>
-                {reactions.map((reaction, index) => (
-                  <TouchableOpacity
-                    key={index}
-                    style={[
-                      styles.reactionBubble,
-                      reaction.isReactedByMe && styles.reactionBubbleActive
-                    ]}
-                    onPress={() => getMessageReactions(message._id)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.reactionEmoji}>{reaction.emoji}</Text>
-                    {reaction.count > 1 && (
-                      <Text style={styles.reactionCount}>{reaction.count}</Text>
-                    )}
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
           </View>
         );
     }
@@ -1819,6 +1825,12 @@ const MessageScreen = () => {
     const isFirstInGroup = !prevMessage || !isSameSender(prevMessage, item);
     const nextMessage = messages[index + 1];
     const isLastInGroup = !nextMessage || !isSameSender(item, nextMessage);
+    
+    const reactions = item.reactions || [];
+    const groupedReactions = reactions.length > 0 
+      ? groupReactionsByEmoji(reactions, currentUserId)
+      : [];
+      const hasReactions = groupedReactions.length > 0;
 
     return (
       <View
@@ -1826,6 +1838,8 @@ const MessageScreen = () => {
           styles.messageRow,
           isMe ? styles.myMessageRow : styles.theirMessageRow,
           isFirstInGroup && styles.messageRowFirst,
+          hasReactions ? { marginBottom: 28 } : { marginBottom: 4 },
+
         ]}
       >
         {!isMe && (
@@ -1841,18 +1855,44 @@ const MessageScreen = () => {
           </View>
         )}
 
-        <PressableScale
-          onLongPress={() => handleMessageLongPress(item)}
-          style={[
-            styles.messageBubble,
-            isMe ? styles.myMessageBubble : styles.theirMessageBubble,
-            isFirstInGroup && (isMe ? styles.myMessageBubbleFirst : styles.theirMessageBubbleFirst),
-            isLastInGroup && (isMe ? styles.myMessageBubbleLast : styles.theirMessageBubbleLast),
-            item.deleted && styles.deletedMessageBubble
-          ]}
-        >
-          {renderMessageContent(item)}
-        </PressableScale>
+        <View style={styles.messageWrapper}>
+          <PressableScale
+            onLongPress={() => handleMessageLongPress(item)}
+            style={[
+              styles.messageBubble,
+              isMe ? styles.myMessageBubble : styles.theirMessageBubble,
+              isFirstInGroup && (isMe ? styles.myMessageBubbleFirst : styles.theirMessageBubbleFirst),
+              isLastInGroup && (isMe ? styles.myMessageBubbleLast : styles.theirMessageBubbleLast),
+              item.deleted && styles.deletedMessageBubble
+            ]}
+          >
+            {renderMessageContent(item)}
+          </PressableScale>
+
+          {groupedReactions.length > 0 && (
+            <View style={[
+              styles.reactionsContainer,
+              isMe ? styles.reactionsContainerRight : styles.reactionsContainerLeft
+            ]}>
+              {groupedReactions.map((reaction, idx) => (
+                <TouchableOpacity
+                  key={idx}
+                  style={[
+                    styles.reactionBubble,
+                    reaction.isReactedByMe && styles.reactionBubbleActive
+                  ]}
+                  onPress={() => handleViewReactions(item)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.reactionEmoji}>{reaction.emoji}</Text>
+                  {reaction.count > 1 && (
+                    <Text style={styles.reactionCount}>{reaction.count}</Text>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
 
         {isMe && isLastInGroup && !item.deleted && (
           <View style={styles.readReceiptContainer}>
@@ -1872,13 +1912,17 @@ const MessageScreen = () => {
     const init = async () => {
       try {
         const userDataStr = await AsyncStorage.getItem('userData');
-        if (userDataStr) {
-          const userData = JSON.parse(userDataStr);
-          setCurrentUserId(userData._id);
-          setCurrentUser(userData);
+        if (!userDataStr) {
+          console.error('❌ No user data found');
+          return;
         }
-
-        await connectSocket();
+        
+        const userData = JSON.parse(userDataStr);
+        
+        setCurrentUserId(userData._id);
+        setCurrentUser(userData);
+        
+        await connectSocket(userData._id);
         await loadConversations();
       } catch (error) {
         console.error('❌ Initialization error:', error);
@@ -2099,7 +2143,7 @@ const MessageScreen = () => {
 
         {/* Toast */}
         {toastVisible && (
-          <Toast message={toastMessage} type={toastType} />
+          <Toast message={toastMessage} type={toastType} onHide={hideToast} />
         )}
       </SafeAreaView>
     );
@@ -2250,15 +2294,16 @@ const MessageScreen = () => {
 
       {/* Toast */}
       {toastVisible && (
-        <Toast message={toastMessage} type={toastType} />
+        <Toast message={toastMessage} type={toastType} onHide={hideToast} />
       )}
     </SafeAreaView>
   );
 };
 
 // ==================== STYLES ====================
-const styles = StyleSheet.create({
-  // Base
+export const styles = StyleSheet.create({
+
+  // ── BASE ──────────────────────────────────────────────
   safeArea: {
     flex: 1,
     backgroundColor: COLORS.background,
@@ -2267,43 +2312,47 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: COLORS.background,
   },
 
-  // Toast
+  // ── TOAST ─────────────────────────────────────────────
   toast: {
     position: 'absolute',
-    bottom: 24,
-    left: 16,
-    right: 16,
-    borderRadius: 12,
-    paddingHorizontal: 16,
+    bottom: 28,
+    left: 20,
+    right: 20,
+    borderRadius: 14,
+    paddingHorizontal: 18,
     paddingVertical: 14,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 8,
+    shadowColor: '#0B9E8E',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 10,
+    zIndex: 1000,
   },
   toastText: {
     color: '#FFF',
-    fontSize: 15,
-    fontWeight: '500',
+    fontSize: 14,
+    fontWeight: '600',
     flex: 1,
+    letterSpacing: 0.1,
   },
 
-  // Conversations List Header
+  // ── CONVERSATIONS LIST HEADER ──────────────────────────
   conversationsHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 12,
     backgroundColor: COLORS.background,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: COLORS.border,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.divider,
   },
   headerLeft: {
     flexDirection: 'row',
@@ -2313,108 +2362,128 @@ const styles = StyleSheet.create({
   headerRight: {
     flexDirection: 'row',
     gap: 8,
+    alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 24,
-    fontWeight: '700',
+    fontSize: 26,
+    fontWeight: '800',
     color: COLORS.text,
-    letterSpacing: -0.5,
+    letterSpacing: -0.8,
+  },
+  headerTitleAccent: {
+    color: COLORS.primary,
   },
   homeButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: COLORS.backgroundSecondary,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: COLORS.primaryLight,
     justifyContent: 'center',
     alignItems: 'center',
   },
   headerIconButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: COLORS.backgroundSecondary,
     justifyContent: 'center',
     alignItems: 'center',
   },
 
-  // Search
+  // ── SEARCH ────────────────────────────────────────────
   searchContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
     backgroundColor: COLORS.background,
   },
   searchInnerContainer: {
     flexDirection: 'row',
     backgroundColor: COLORS.backgroundSecondary,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    height: 36,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    height: 40,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
   searchInput: {
     flex: 1,
-    marginLeft: 8,
+    marginLeft: 10,
     fontSize: 15,
     color: COLORS.text,
+    letterSpacing: 0.1,
   },
 
-  // Conversations List
+  // ── CONVERSATIONS LIST ─────────────────────────────────
   conversationsListContent: {
-    paddingHorizontal: 0,
-    paddingBottom: 20,
+    paddingTop: 4,
+    paddingBottom: 30,
   },
   conversationItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
     backgroundColor: COLORS.background,
+  },
+  conversationAvatarWrapper: {
+    position: 'relative',
+    marginRight: 14,
   },
   conversationAvatarContainer: {
     position: 'relative',
-    marginRight: 12,
+    marginRight: 14,
   },
   conversationAvatar: {
     width: SIZES.avatarLarge,
     height: SIZES.avatarLarge,
     borderRadius: SIZES.avatarLarge / 2,
+    borderWidth: 2,
+    borderColor: COLORS.primaryLight,
   },
   conversationStatusDot: {
     position: 'absolute',
     bottom: 2,
     right: 2,
-    width: 14,
-    height: 14,
+    width: 13,
+    height: 13,
     borderRadius: 7,
     backgroundColor: COLORS.online,
-    borderWidth: 2,
+    borderWidth: 2.5,
     borderColor: COLORS.background,
   },
   conversationContent: {
     flex: 1,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.divider,
   },
   conversationHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 3,
   },
   conversationName: {
     fontSize: 16,
     fontWeight: '600',
     color: COLORS.text,
     flex: 1,
+    letterSpacing: -0.2,
   },
   unreadConversationName: {
-    fontWeight: '700',
+    fontWeight: '800',
+    color: COLORS.text,
   },
   conversationTime: {
-    fontSize: 13,
-    color: COLORS.textSecondary,
+    fontSize: 12,
+    color: COLORS.textLight,
     marginLeft: 8,
+    letterSpacing: 0.2,
   },
   unreadConversationTime: {
     color: COLORS.primary,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   conversationLastMessageRow: {
     flexDirection: 'row',
@@ -2422,10 +2491,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   conversationLastMessage: {
-    fontSize: 14,
+    fontSize: 13.5,
     color: COLORS.textSecondary,
     flex: 1,
     marginRight: 8,
+    letterSpacing: 0.1,
   },
   unreadConversationLastMessage: {
     color: COLORS.text,
@@ -2433,9 +2503,9 @@ const styles = StyleSheet.create({
   },
   unreadBadge: {
     backgroundColor: COLORS.primary,
-    borderRadius: 12,
-    minWidth: 20,
-    height: 20,
+    borderRadius: 11,
+    minWidth: 22,
+    height: 22,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 6,
@@ -2443,50 +2513,75 @@ const styles = StyleSheet.create({
   unreadBadgeText: {
     color: '#FFF',
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
   medicalRecordBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 4,
+    marginTop: 5,
+    backgroundColor: COLORS.primaryLight,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    gap: 4,
   },
   medicalRecordText: {
-    fontSize: 12,
+    fontSize: 11,
     color: COLORS.primary,
-    marginLeft: 4,
-    fontWeight: '500',
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   emptyConversationsContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingTop: 100,
+    gap: 12,
+  },
+  emptyIconContainer: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: COLORS.primaryLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
   },
   emptyConversationsText: {
     fontSize: 18,
-    color: COLORS.textSecondary,
-    marginTop: 16,
-    fontWeight: '600',
+    color: COLORS.text,
+    fontWeight: '700',
+    letterSpacing: -0.3,
   },
   emptyConversationsSubtext: {
     fontSize: 14,
-    color: COLORS.textLight,
-    marginTop: 8,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    paddingHorizontal: 40,
+    lineHeight: 20,
   },
 
-  // Chat Screen Header
+  // ── CHAT HEADER ───────────────────────────────────────
   chatHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: COLORS.border,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.divider,
     backgroundColor: COLORS.background,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   headerBackButton: {
-    padding: 4,
-    marginRight: 4,
+    padding: 6,
+    marginRight: 2,
+    borderRadius: 10,
   },
   headerUserInfo: {
     flex: 1,
@@ -2495,19 +2590,21 @@ const styles = StyleSheet.create({
   },
   headerAvatarContainer: {
     position: 'relative',
-    marginRight: 10,
+    marginRight: 12,
   },
   headerAvatar: {
-    width: SIZES.avatarMedium,
-    height: SIZES.avatarMedium,
-    borderRadius: SIZES.avatarMedium / 2,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 2,
+    borderColor: COLORS.primaryLight,
   },
   headerStatusDot: {
     position: 'absolute',
     bottom: 0,
     right: 0,
-    width: 12,
-    height: 12,
+    width: 11,
+    height: 11,
     borderRadius: 6,
     backgroundColor: COLORS.online,
     borderWidth: 2,
@@ -2518,122 +2615,179 @@ const styles = StyleSheet.create({
   },
   headerUserName: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
     color: COLORS.text,
-    marginBottom: 2,
+    letterSpacing: -0.3,
+    marginBottom: 1,
   },
   headerUserStatus: {
     fontSize: 12,
     color: COLORS.textSecondary,
+    letterSpacing: 0.1,
   },
   headerUserStatusOnline: {
     fontSize: 12,
     color: COLORS.online,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   headerUserStatusTyping: {
     fontSize: 12,
     color: COLORS.primary,
     fontStyle: 'italic',
+    fontWeight: '500',
   },
   headerActions: {
     flexDirection: 'row',
-    gap: 4,
+    gap: 6,
   },
   headerActionButton: {
-    padding: 6,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.primaryLight,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 
-  // Chat Container
+  // ── CHAT CONTAINER & MESSAGES ──────────────────────────
   chatContainer: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.backgroundChat,
   },
   messagesListContent: {
-    paddingHorizontal: 12,
-    paddingTop: 12,
-    paddingBottom: 8,
+    paddingHorizontal: 14,
+    paddingTop: 16,
+    paddingBottom: 12,
   },
   emptyMessagesContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     minHeight: 400,
+    gap: 12,
+  },
+  emptyIconCircle: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: COLORS.primaryLight,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   emptyMessagesText: {
-    fontSize: 18,
-    color: COLORS.textSecondary,
-    marginTop: 16,
-    fontWeight: '600',
+    fontSize: 17,
+    color: COLORS.text,
+    fontWeight: '700',
+    letterSpacing: -0.3,
   },
   emptyMessagesSubtext: {
-    fontSize: 14,
-    color: COLORS.textLight,
-    marginTop: 8,
+    fontSize: 13.5,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    paddingHorizontal: 40,
   },
 
-  // Messages
+  // ── MESSAGE ROWS ───────────────────────────────────────
   messageRow: {
     flexDirection: 'row',
-    marginBottom: 2,
-    paddingHorizontal: 4,
+    marginBottom: 4,
+    paddingHorizontal: 2,
   },
   myMessageRow: {
     justifyContent: 'flex-end',
   },
   theirMessageRow: {
     justifyContent: 'flex-start',
+    alignItems: 'flex-end',
   },
   messageRowFirst: {
-    marginTop: 8,
+    marginTop: 12,
+  },
+  messageRowWithReaction: {
+    marginBottom: 24,
   },
   avatarContainer: {
     width: SIZES.avatarSmall,
     marginRight: 8,
     alignSelf: 'flex-end',
+    marginBottom: 2,
   },
   messageAvatar: {
     width: SIZES.avatarSmall,
     height: SIZES.avatarSmall,
     borderRadius: SIZES.avatarSmall / 2,
+    borderWidth: 1.5,
+    borderColor: COLORS.primaryLight,
   },
   avatarPlaceholder: {
     width: SIZES.avatarSmall,
     height: SIZES.avatarSmall,
   },
-  messageBubble: {
-    maxWidth: '75%',
-    borderRadius: 18,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+
+  // ── MESSAGE WRAPPER & BUBBLES ──────────────────────────
+  messageWrapper: {
+    maxWidth: '72%',
   },
+  messageBubble: {
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+
+  // My messages (teal gradient look)
   myMessageBubble: {
     backgroundColor: COLORS.messageBubbleMe,
+    borderBottomRightRadius: 6,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
+    alignSelf: 'flex-end',
   },
   myMessageBubbleFirst: {
-    borderTopRightRadius: 18,
+    borderTopRightRadius: 20,
   },
   myMessageBubbleLast: {
     borderBottomRightRadius: 4,
   },
-  theirMessageBubble: {
-    backgroundColor: COLORS.messageBubbleThem,
+  myMessageBubbleMiddle: {
+    borderTopRightRadius: 6,
+    borderBottomRightRadius: 6,
   },
+
+  // Their messages (soft gray)
+  theirMessageBubble: {
+  backgroundColor: '#E2E8F0',  
+  borderBottomLeftRadius: 6,
+  alignSelf: 'flex-start',
+},
   theirMessageBubbleFirst: {
-    borderTopLeftRadius: 18,
+    borderTopLeftRadius: 20,
   },
   theirMessageBubbleLast: {
     borderBottomLeftRadius: 4,
   },
+  theirMessageBubbleMiddle: {
+    borderTopLeftRadius: 6,
+    borderBottomLeftRadius: 6,
+  },
+
   deletedMessageBubble: {
     backgroundColor: COLORS.backgroundSecondary,
+    borderStyle: 'dashed',
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
+
+  // ── MESSAGE TEXT ───────────────────────────────────────
   messageText: {
-    fontSize: 15,
-    lineHeight: 20,
+    fontSize: 15.5,
+    lineHeight: 21,
+    letterSpacing: 0.1,
   },
   myMessageText: {
-    color: '#FFF',
+    color: '#FFFFFF',
   },
   theirMessageText: {
     color: COLORS.text,
@@ -2641,21 +2795,22 @@ const styles = StyleSheet.create({
   editedText: {
     fontSize: 11,
     fontStyle: 'italic',
-    marginTop: 2,
+    marginTop: 3,
+    letterSpacing: 0.2,
   },
   myEditedText: {
-    color: 'rgba(255, 255, 255, 0.7)',
+    color: 'rgba(255,255,255,0.65)',
   },
   theirEditedText: {
     color: COLORS.textLight,
   },
   readReceiptContainer: {
-    marginLeft: 4,
+    marginLeft: 5,
     alignSelf: 'flex-end',
-    marginBottom: 4,
+    marginBottom: 6,
   },
 
-  // Deleted Message
+  // ── DELETED MESSAGE ────────────────────────────────────
   deletedMessageContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2667,28 +2822,35 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
 
-  // Image Message
-  imageMessageWrapper: {
-    position: 'relative',
+  // ── TIMESTAMP LABEL ────────────────────────────────────
+  timestampLabel: {
+    textAlign: 'center',
+    fontSize: 11.5,
+    color: COLORS.textLight,
+    letterSpacing: 0.4,
+    fontWeight: '500',
+    marginVertical: 10,
   },
+
+  // ── IMAGE MESSAGE ──────────────────────────────────────
   imageMessageContainer: {
-    borderRadius: 16,
+    borderRadius: 18,
     overflow: 'hidden',
   },
   mediaImage: {
-    width: width * 0.6,
-    height: width * 0.6,
+    width: width * 0.58,
+    height: width * 0.58,
     backgroundColor: COLORS.backgroundSecondary,
   },
   imageLoadingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.3)',
+    backgroundColor: 'rgba(11,158,142,0.25)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   imageErrorOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -2698,144 +2860,183 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   imageCaptionContainer: {
-    marginTop: 8,
-    paddingHorizontal: 8,
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 10,
+    backgroundColor: 'rgba(0,0,0,0.38)',
   },
   imageCaption: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
+    fontSize: 13.5,
+    color: '#FFF',
+    lineHeight: 18,
   },
 
-  // File Message
+  // ── FILE MESSAGE ───────────────────────────────────────
   fileContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
+    padding: 14,
     backgroundColor: COLORS.background,
-    borderRadius: 12,
-    borderWidth: 1,
+    borderRadius: 16,
+    borderWidth: 1.5,
     borderColor: COLORS.border,
-    minWidth: width * 0.5,
+    minWidth: width * 0.48,
+    gap: 12,
   },
   fileIconContainer: {
-    marginRight: 12,
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: COLORS.primaryLight,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   fileInfoContainer: {
     flex: 1,
-    marginRight: 12,
   },
   fileName: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 13.5,
+    fontWeight: '700',
     color: COLORS.text,
-    marginBottom: 4,
+    marginBottom: 3,
+    letterSpacing: -0.1,
   },
   fileSize: {
     fontSize: 12,
     color: COLORS.textSecondary,
-    marginBottom: 4,
+    marginBottom: 3,
   },
   fileMessage: {
-    fontSize: 13,
+    fontSize: 12.5,
     color: COLORS.textSecondary,
   },
 
-  // Reactions
-  reactionsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 4,
-    gap: 4,
-  },
-  reactionsContainerRight: {
-    justifyContent: 'flex-end',
-  },
+  // ── REACTIONS ─────────────────────────────────────────
+reactionsContainer: {
+  flexDirection: 'row',
+  flexWrap: 'wrap',
+  marginTop: -8,   
+  gap: 3,
+  paddingHorizontal: 6,
+},
+reactionsContainerLeft: {
+  justifyContent: 'flex-start',
+},
+reactionsContainerRight: {
+  justifyContent: 'flex-end',
+},
   reactionBubble: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.background,
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    gap: 3,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
+  flexDirection: 'row',
+  alignItems: 'center',
+  backgroundColor: COLORS.background,
+  borderRadius: 12,
+  paddingHorizontal: 7,
+  paddingVertical: 3,
+  gap: 2,
+  borderWidth: 1.5,
+  borderColor: COLORS.border,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 1 },
+  shadowOpacity: 0.08,
+  shadowRadius: 3,
+  elevation: 2,
+},
+
   reactionBubbleActive: {
     backgroundColor: COLORS.primaryLight,
     borderColor: COLORS.primary,
   },
   reactionEmoji: {
-    fontSize: 14,
+    fontSize: 10,
   },
-  reactionCount: {
-    fontSize: 11,
-    color: COLORS.textSecondary,
-    fontWeight: '600',
+reactionCount: {
+  fontSize: 11,
+  color: COLORS.textSecondary,
+  fontWeight: '700',
+},
+  reactionCountActive: {
+    color: COLORS.primary,
   },
 
-  // Input Area
+  // ── INPUT AREA ─────────────────────────────────────────
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    paddingBottom: Platform.OS === 'ios' ? 10 : 10,
     backgroundColor: COLORS.background,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: COLORS.border,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.divider,
+    gap: 8,
   },
   uploadingIndicator: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
+    paddingVertical: 14,
+    gap: 10,
   },
   uploadingText: {
-    marginLeft: 12,
     fontSize: 14,
     color: COLORS.primary,
-    fontWeight: '500',
+    fontWeight: '600',
+    letterSpacing: 0.2,
   },
   inputActionButton: {
-    padding: 8,
-    marginBottom: 4,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.primaryLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 2,
   },
   textInputContainer: {
     flex: 1,
     backgroundColor: COLORS.backgroundSecondary,
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    marginHorizontal: 6,
-    minHeight: 36,
-    maxHeight: 100,
+    borderRadius: 22,
+    paddingHorizontal: 16,
+    minHeight: 38,
+    maxHeight: 110,
     justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+  },
+  textInputContainerFocused: {
+    borderColor: COLORS.primary,
+    backgroundColor: '#FAFFFE',
   },
   textInput: {
     fontSize: 15,
     color: COLORS.text,
-    paddingVertical: 8,
-    maxHeight: 80,
+    paddingVertical: 9,
+    maxHeight: 90,
+    lineHeight: 20,
+    letterSpacing: 0.1,
   },
   sendButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: COLORS.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 2,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    elevation: 4,
   },
 
-  // Image Preview Modal
+  // ── IMAGE PREVIEW MODAL ────────────────────────────────
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+    backgroundColor: 'rgba(10, 20, 30, 0.96)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -2847,19 +3048,21 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 50 : 20,
+    top: Platform.OS === 'ios' ? 54 : 24,
     right: 20,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(255,255,255,0.15)',
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 1000,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
   },
   imageContainer: {
     width: '100%',
-    height: '80%',
+    height: '82%',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -2881,45 +3084,51 @@ const styles = StyleSheet.create({
     position: 'absolute',
     justifyContent: 'center',
     alignItems: 'center',
+    gap: 12,
   },
   errorText: {
     color: '#FFF',
-    marginTop: 12,
     fontSize: 16,
     textAlign: 'center',
+    fontWeight: '500',
   },
   retryButton: {
-    marginTop: 20,
-    paddingHorizontal: 24,
+    paddingHorizontal: 28,
     paddingVertical: 12,
     backgroundColor: COLORS.primary,
-    borderRadius: 8,
+    borderRadius: 12,
   },
   retryButtonText: {
     color: '#FFF',
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
   },
 
-  // Emoji Picker
+  // ── EMOJI PICKER ───────────────────────────────────────
   emojiPickerBackdrop: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    backgroundColor: 'rgba(10,20,30,0.45)',
     justifyContent: 'flex-end',
+    zIndex: 1000,
   },
   emojiPickerContainer: {
     backgroundColor: COLORS.background,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
-    paddingTop: 12,
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    paddingBottom: Platform.OS === 'ios' ? 36 : 24,
+    paddingTop: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 20,
   },
   emojiPickerHandle: {
-    width: 36,
+    width: 40,
     height: 4,
     backgroundColor: COLORS.border,
     borderRadius: 2,
@@ -2927,68 +3136,79 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   emojiPickerTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '700',
     color: COLORS.text,
     textAlign: 'center',
-    marginBottom: 16,
+    marginBottom: 18,
+    letterSpacing: -0.2,
   },
   emojiPickerContent: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-around',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
   },
   emojiButton: {
     width: '20%',
     aspectRatio: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 12,
+    borderRadius: 16,
   },
   emojiText: {
-    fontSize: 32,
+    fontSize: 34,
   },
 
-  // Action Sheet
+  // ── ACTION SHEET ───────────────────────────────────────
   actionSheetOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    backgroundColor: 'rgba(10,20,30,0.45)',
     justifyContent: 'flex-end',
   },
   actionSheetContainer: {
     backgroundColor: COLORS.background,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
-    paddingTop: 12,
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    paddingBottom: Platform.OS === 'ios' ? 36 : 24,
+    paddingTop: 14,
   },
   actionSheetHandle: {
-    width: 36,
+    width: 40,
     height: 4,
     backgroundColor: COLORS.border,
     borderRadius: 2,
     alignSelf: 'center',
-    marginBottom: 12,
+    marginBottom: 14,
   },
   actionSheetButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
+    paddingVertical: 15,
+    paddingHorizontal: 24,
+    gap: 16,
+  },
+  actionSheetIconWrapper: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: COLORS.backgroundSecondary,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   actionSheetIcon: {
-    marginRight: 16,
+    marginRight: 0,
   },
   actionSheetText: {
     fontSize: 16,
     fontWeight: '500',
+    letterSpacing: -0.1,
   },
   cancelButton: {
-    marginTop: 8,
-    paddingTop: 16,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: COLORS.border,
+    marginTop: 6,
+    paddingTop: 15,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.divider,
     justifyContent: 'center',
   },
   cancelText: {
@@ -2998,122 +3218,148 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // Edit Modal
+  // ── EDIT MODAL ─────────────────────────────────────────
   editModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    backgroundColor: 'rgba(10,20,30,0.45)',
     justifyContent: 'flex-end',
   },
   editModalContent: {
     backgroundColor: COLORS.background,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    padding: 22,
+    paddingBottom: Platform.OS === 'ios' ? 36 : 22,
   },
   editModalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 18,
   },
   editModalTitle: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: '800',
     color: COLORS.text,
+    letterSpacing: -0.4,
   },
   editTextInput: {
     backgroundColor: COLORS.backgroundSecondary,
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 15,
+    borderRadius: 16,
+    padding: 16,
+    fontSize: 15.5,
     minHeight: 100,
     maxHeight: 200,
     textAlignVertical: 'top',
     marginBottom: 20,
     color: COLORS.text,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    lineHeight: 22,
   },
   editModalFooter: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    gap: 12,
+    gap: 10,
   },
   editCancelButton: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 22,
     paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: COLORS.backgroundSecondary,
   },
   editCancelText: {
-    fontSize: 16,
+    fontSize: 15,
     color: COLORS.textSecondary,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   editSaveButton: {
     backgroundColor: COLORS.primary,
-    paddingHorizontal: 24,
+    paddingHorizontal: 28,
     paddingVertical: 12,
-    borderRadius: 8,
-    minWidth: 80,
+    borderRadius: 12,
+    minWidth: 90,
     alignItems: 'center',
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
   },
   editSaveButtonDisabled: {
     backgroundColor: COLORS.textLight,
+    shadowOpacity: 0,
+    elevation: 0,
   },
   editSaveText: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#FFF',
-    fontWeight: '600',
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
 
-  // Reactions View Modal
+  // ── REACTIONS VIEW MODAL ───────────────────────────────
   reactionsModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    backgroundColor: 'rgba(10,20,30,0.45)',
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 24,
   },
   reactionsModalContent: {
     backgroundColor: COLORS.background,
-    borderRadius: 16,
-    width: '85%',
-    maxHeight: '70%',
-    padding: 20,
+    borderRadius: 22,
+    width: '100%',
+    maxHeight: '72%',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    elevation: 20,
   },
   reactionsModalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    padding: 20,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.divider,
   },
   reactionsModalTitle: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: '800',
     color: COLORS.text,
+    letterSpacing: -0.4,
   },
   reactionsModalList: {
-    maxHeight: 400,
+    maxHeight: 380,
+    paddingHorizontal: 20,
   },
   reactionItem: {
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: COLORS.border,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.divider,
   },
   reactionItemEmojiContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
+    gap: 10,
   },
   reactionItemEmoji: {
-    fontSize: 24,
-    marginRight: 8,
+    fontSize: 26,
   },
-  reactionItemCountBadge: {
-    backgroundColor: COLORS.backgroundSecondary,
+  reactionItemCount: {
+    backgroundColor: COLORS.primaryLight,
     borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
     fontSize: 12,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
+    fontWeight: '800',
+    color: COLORS.primary,
+    letterSpacing: 0.3,
   },
   reactionItemUsers: {
     gap: 8,
@@ -3121,18 +3367,22 @@ const styles = StyleSheet.create({
   reactionUserItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
   },
   reactionUserAvatar: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: COLORS.primaryLight,
   },
   reactionItemUserName: {
-    fontSize: 14,
+    fontSize: 14.5,
     color: COLORS.text,
-    fontWeight: '500',
+    fontWeight: '600',
+    letterSpacing: -0.1,
   },
 });
+
 
 export default MessageScreen;
