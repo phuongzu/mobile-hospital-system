@@ -1,3 +1,4 @@
+// screens/HomeScreen.tsx
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
@@ -15,7 +16,7 @@ import {
   Animated,
   PanResponder,
   AppState,
-  AppStateStatus
+  AppStateStatus,
 } from 'react-native';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -25,6 +26,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../App';
 import { LinearGradient } from 'expo-linear-gradient';
 import NetInfo from '@react-native-community/netinfo';
+import OnboardingGuide from '../components/OnboardingGuide';
 
 type NavigationProp = StackNavigationProp<RootStackParamList, 'Home'>;
 
@@ -56,8 +58,8 @@ interface MedicalRecord {
 }
 
 const { width, height } = Dimensions.get('window');
+const API_BASE_URL = 'http://localhost:3000';
 
-// Custom hook cho medical records với real-time updates
 const useMedicalRecords = () => {
   const [records, setRecords] = useState<MedicalRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,25 +67,62 @@ const useMedicalRecords = () => {
   const [lastUpdated, setLastUpdated] = useState<number>(0);
   const [hasNewData, setHasNewData] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showSpotlight, setShowSpotlight] = useState(false);
+  const [onboardingMode, setOnboardingMode] = useState<'slides' | 'spotlight'>('slides');
+
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const isFetchingRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Lấy token từ AsyncStorage
   const getAuthToken = async (): Promise<string | null> => {
     try {
       return await AsyncStorage.getItem('authToken');
-    } catch (error) {
-      console.error('Error getting auth token:', error);
+    } catch {
       return null;
     }
   };
 
-  // Fetch medical records với optimizations
+  const checkOnboardingStatus = async () => {
+    try {
+      const hasSeenOnboarding = await AsyncStorage.getItem('hasSeenOnboarding');
+      if (!hasSeenOnboarding) {
+        setShowOnboarding(true);
+        setOnboardingMode('slides');
+      } else {
+        const hasSeenSpotlight = await AsyncStorage.getItem('hasSeenSpotlight');
+        if (!hasSeenSpotlight) {
+          setTimeout(() => {
+            setShowSpotlight(true);
+            setOnboardingMode('spotlight');
+          }, 1200);
+        }
+      }
+    } catch (err) {
+      console.error('Error checking onboarding status:', err);
+    }
+  };
+
+  const handleOnboardingComplete = () => {
+    setShowOnboarding(false);
+    setTimeout(() => {
+      setShowSpotlight(true);
+      setOnboardingMode('spotlight');
+    }, 800);
+  };
+
+  const handleSpotlightComplete = async () => {
+    setShowSpotlight(false);
+    try {
+      await AsyncStorage.setItem('hasSeenSpotlight', 'true');
+    } catch (err) {
+      console.error('Error saving spotlight status:', err);
+    }
+  };
+
   const fetchMedicalRecords = async (force = false) => {
-    // Ngăn chặn multiple simultaneous requests
     if (isFetchingRef.current && !force) return;
-    
+
     const token = await getAuthToken();
     if (!token) {
       setError('Authentication required');
@@ -91,7 +130,6 @@ const useMedicalRecords = () => {
       return;
     }
 
-    // Cancel previous request nếu đang chạy
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
@@ -101,17 +139,8 @@ const useMedicalRecords = () => {
 
     try {
       isFetchingRef.current = true;
-      
-      const API_BASE_URL = 'http://localhost:3000';
-      
-      // Thêm timestamp để tránh cache
-      const timestamp = Date.now();
-      
-      // Chỉ fetch records mới hơn lastUpdated
-      const params: any = {
-        _t: timestamp, // Prevent caching
-      };
 
+      const params: Record<string, any> = { _t: Date.now() };
       if (!force && lastUpdated > 0) {
         params.updatedAfter = new Date(lastUpdated).toISOString();
       }
@@ -119,80 +148,59 @@ const useMedicalRecords = () => {
       const response = await axios.get(
         `${API_BASE_URL}/api/patient/medical-records/my-records`,
         {
-          headers: { 
+          headers: {
             Authorization: `Bearer ${token}`,
             'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache'
+            Pragma: 'no-cache',
           },
           params,
           signal: abortController.signal,
-          timeout: 10000 // 10 seconds timeout
+          timeout: 10000,
         }
       );
 
-      const newRecords = response.data || [];
-      
-      // Check if there's new data
+      const newRecords: MedicalRecord[] = response.data || [];
+
       if (newRecords.length > 0) {
         if (lastUpdated === 0 || force) {
-          // First load or force refresh
           setRecords(newRecords);
         } else {
-          // Merge and update existing records
           setRecords(prevRecords => {
-            const mergedRecords = [...prevRecords];
+            const merged = [...prevRecords];
             const existingIds = new Set(prevRecords.map(r => r._id));
-            
-            newRecords.forEach(newRecord => {
-              if (!existingIds.has(newRecord._id)) {
-                // New record - add to beginning
-                mergedRecords.unshift(newRecord);
+            newRecords.forEach(nr => {
+              if (!existingIds.has(nr._id)) {
+                merged.unshift(nr);
                 setHasNewData(true);
               } else {
-                // Update existing record
-                const index = mergedRecords.findIndex(r => r._id === newRecord._id);
-                if (index !== -1) {
-                  mergedRecords[index] = newRecord;
-                }
+                const idx = merged.findIndex(r => r._id === nr._id);
+                if (idx !== -1) merged[idx] = nr;
               }
             });
-            
-            // Sort by updated_at descending
-            return mergedRecords.sort((a, b) => 
-              new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+            return merged.sort(
+              (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
             );
           });
         }
 
-        // Update lastUpdated timestamp
-        const latestUpdate = Math.max(...newRecords.map(r => new Date(r.updated_at).getTime()));
+        const latestUpdate = Math.max(
+          ...newRecords.map(r => new Date(r.updated_at).getTime())
+        );
         if (latestUpdate > lastUpdated) {
           setLastUpdated(latestUpdate);
           await AsyncStorage.setItem('lastMedicalRecordsUpdate', latestUpdate.toString());
         }
       }
-      
+
       setError(null);
-    } catch (error: any) {
-      if (error.name === 'CanceledError' || error.name === 'AbortError') {
-        // Request was cancelled, ignore
-        return;
-      }
-      
-      console.error('Error fetching medical records:', error);
-      
-      if (error.response?.status === 401) {
-        setError('Session expired');
-      } else if (error.response?.status === 404) {
-        setRecords([]);
-        setError(null);
-      } else if (error.code === 'ECONNABORTED') {
-        setError('Request timeout');
-      } else if (!error.response && error.request) {
-        setError('Network error');
-      } else {
-        setError('Unable to load medical records');
-      }
+    } catch (err: any) {
+      if (err.name === 'CanceledError' || err.name === 'AbortError') return;
+
+      if (err.response?.status === 401) setError('Session expired');
+      else if (err.response?.status === 404) { setRecords([]); setError(null); }
+      else if (err.code === 'ECONNABORTED') setError('Request timeout');
+      else if (!err.response && err.request) setError('Network error');
+      else setError('Unable to load medical records');
     } finally {
       isFetchingRef.current = false;
       setLoading(false);
@@ -200,20 +208,6 @@ const useMedicalRecords = () => {
     }
   };
 
-  // Initialize polling
-  const startPolling = () => {
-    stopPolling(); // Clear existing interval
-    
-    // Fetch immediately
-    fetchMedicalRecords();
-    
-    // Set up polling every 2 minutes
-    pollingIntervalRef.current = setInterval(() => {
-      fetchMedicalRecords();
-    }, 120000); // 2 minutes
-  };
-
-  // Stop polling
   const stopPolling = () => {
     if (pollingIntervalRef.current) {
       clearInterval(pollingIntervalRef.current);
@@ -221,172 +215,139 @@ const useMedicalRecords = () => {
     }
   };
 
-  // Manual refresh
+  const startPolling = () => {
+    stopPolling();
+    fetchMedicalRecords();
+    pollingIntervalRef.current = setInterval(() => fetchMedicalRecords(), 120000);
+  };
+
   const refreshRecords = async () => {
     setRefreshing(true);
     await fetchMedicalRecords(true);
-    
-    // Auto hide new data indicator after 3 seconds
-    if (hasNewData) {
-      setTimeout(() => setHasNewData(false), 3000);
-    }
+    if (hasNewData) setTimeout(() => setHasNewData(false), 3000);
   };
 
-  // Initialize
   useEffect(() => {
-    // Load last updated timestamp
-    const loadLastUpdated = async () => {
+    const init = async () => {
       try {
         const savedTime = await AsyncStorage.getItem('lastMedicalRecordsUpdate');
-        if (savedTime) {
-          setLastUpdated(parseInt(savedTime));
-        }
-      } catch (error) {
-        console.error('Error loading last updated timestamp:', error);
-      }
+        if (savedTime) setLastUpdated(parseInt(savedTime));
+      } catch {}
+      checkOnboardingStatus();
+      startPolling();
     };
+    init();
 
-    loadLastUpdated();
-    startPolling();
-
-    // Cleanup
     return () => {
       stopPolling();
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
+      abortControllerRef.current?.abort();
     };
   }, []);
 
-  // Listen to app state changes
   useEffect(() => {
-    const handleAppStateChange = (nextAppState: AppStateStatus) => {
-      if (nextAppState === 'active') {
-        // App came to foreground, refresh data
-        startPolling();
-      } else if (nextAppState === 'background') {
-        // App went to background, stop polling to save battery
-        stopPolling();
-      }
-    };
-
-    const subscription = AppState.addEventListener('change', handleAppStateChange);
-    
-    return () => {
-      subscription.remove();
-    };
-  }, []);
-
-  // Listen to network state changes
-  useEffect(() => {
-    const unsubscribe = NetInfo.addEventListener(state => {
-      if (state.isConnected) {
-        // Network is back, refresh data
-        fetchMedicalRecords();
-      }
+    const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
+      if (next === 'active') startPolling();
+      else if (next === 'background') stopPolling();
     });
+    return () => sub.remove();
+  }, []);
 
-    return () => unsubscribe();
+  useEffect(() => {
+    const unsub = NetInfo.addEventListener(state => {
+      if (state.isConnected) fetchMedicalRecords();
+    });
+    return () => unsub();
   }, []);
 
   return {
     records,
+    setRecords,
     loading,
     refreshing,
     hasNewData,
     error,
     refreshRecords,
     setHasNewData,
-    fetchMedicalRecords
+    fetchMedicalRecords,
+    showOnboarding,
+    showSpotlight,
+    onboardingMode,
+    handleOnboardingComplete,
+    handleSpotlightComplete,
   };
 };
 
-// Main Component
 const HomeScreen = () => {
   const navigation = useNavigation<NavigationProp>();
-  
-  // State
   const [userName, setUserName] = useState('');
   const [userRole, setUserRole] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'active' | 'resolved'>('all');
   const [updatingRecord, setUpdatingRecord] = useState<string | null>(null);
-  
-  // Chatbot Widget State
   const [isChatbotVisible, setIsChatbotVisible] = useState(false);
   const [unreadMessages, setUnreadMessages] = useState(0);
-  const position = useState(new Animated.ValueXY({ x: width - 80, y: height - 200 }))[0];
 
-  // Use custom hook for medical records
+  const position = useState(
+    new Animated.ValueXY({ x: width - 80, y: height - 200 })
+  )[0];
+
   const {
     records,
+    setRecords,
     loading,
     refreshing,
     hasNewData,
     error,
     refreshRecords,
     setHasNewData,
-    fetchMedicalRecords
+    fetchMedicalRecords,
+    showOnboarding,
+    showSpotlight,
+    onboardingMode,
+    handleOnboardingComplete,
+    handleSpotlightComplete,
   } = useMedicalRecords();
 
-  // PanResponder for draggable chatbot widget
   const panResponder = PanResponder.create({
     onStartShouldSetPanResponder: () => true,
-    onPanResponderMove: Animated.event([
-      null,
-      {
-        dx: position.x,
-        dy: position.y,
-      },
-    ], { useNativeDriver: false }),
+    onPanResponderMove: Animated.event(
+      [null, { dx: position.x, dy: position.y }],
+      { useNativeDriver: false }
+    ),
     onPanResponderRelease: () => {
-      const currentX = position.x.__getValue();
-      const currentY = position.y.__getValue();
-
-      let newX = currentX;
-      let newY = currentY;
-
-      // Ensure widget stays within screen bounds
-      if (currentX < 0) newX = 0;
-      if (currentX > width - 60) newX = width - 60;
-      if (currentY < 100) newY = 100;
-      if (currentY > height - 100) newY = height - 100;
-
+      const x = (position.x as any).__getValue();
+      const y = (position.y as any).__getValue();
       Animated.spring(position, {
-        toValue: { x: newX, y: newY },
+        toValue: {
+          x: Math.min(Math.max(x, 0), width - 60),
+          y: Math.min(Math.max(y, 100), height - 100),
+        },
         useNativeDriver: false,
       }).start();
     },
   });
 
-  // Load user data and focus effect
   useEffect(() => {
     loadUserData();
   }, []);
 
-  // Refresh data when screen comes into focus
   useFocusEffect(
     useCallback(() => {
-      // Refresh data when screen is focused
       fetchMedicalRecords();
-      
-      // Clear new data indicator after showing
       if (hasNewData) {
-        const timer = setTimeout(() => setHasNewData(false), 3000);
-        return () => clearTimeout(timer);
+        const t = setTimeout(() => setHasNewData(false), 3000);
+        return () => clearTimeout(t);
       }
     }, [hasNewData])
   );
 
-  // Simulate receiving new messages
   useEffect(() => {
-    const messageInterval = setInterval(() => {
+    const interval = setInterval(() => {
       if (!isChatbotVisible && Math.random() > 0.7) {
         setUnreadMessages(prev => prev + 1);
       }
     }, 30000);
-
-    return () => clearInterval(messageInterval);
+    return () => clearInterval(interval);
   }, [isChatbotVisible]);
 
   const loadUserData = async () => {
@@ -395,9 +356,7 @@ const HomeScreen = () => {
       const role = await AsyncStorage.getItem('userRole');
       if (name) setUserName(name);
       if (role) setUserRole(role);
-    } catch (error) {
-      console.error('Error loading user data:', error);
-    }
+    } catch {}
   };
 
   const updateRecordStatus = async (recordId: string, newStatus: string) => {
@@ -410,71 +369,57 @@ const HomeScreen = () => {
         return;
       }
 
-      const API_BASE_URL = 'http://localhost:3000';
       await axios.patch(
         `${API_BASE_URL}/api/patient/medical-records/${recordId}/status`,
         { status: newStatus },
-        { 
-          headers: { Authorization: `Bearer ${token}` },
-          timeout: 5000
-        }
+        { headers: { Authorization: `Bearer ${token}` }, timeout: 5000 }
       );
 
-      // Optimistic update
-      setRecords(prevRecords => 
-        prevRecords.map(record => 
-          record._id === recordId ? { ...record, status: newStatus, updated_at: new Date().toISOString() } : record
-        ).sort((a, b) => 
-          new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-        )
+      setRecords(prev =>
+        prev
+          .map(r =>
+            r._id === recordId
+              ? { ...r, status: newStatus, updated_at: new Date().toISOString() }
+              : r
+          )
+          .sort(
+            (a, b) =>
+              new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+          )
       );
 
-      // Trigger a silent refresh to sync with server
       setTimeout(() => fetchMedicalRecords(), 1000);
-    } catch (error: any) {
-      console.error('Error updating record status:', error);
+    } catch {
       Alert.alert('Error', 'Failed to update record status');
-      
-      // Revert optimistic update on error
       fetchMedicalRecords(true);
     } finally {
       setUpdatingRecord(null);
     }
   };
 
-  const handleRefresh = () => {
-    refreshRecords();
-  };
-
   const handleLogout = async () => {
     try {
       const token = await AsyncStorage.getItem('authToken');
       if (token) {
-        const API_BASE_URL = 'http://localhost:3000';
-        await axios.post(`${API_BASE_URL}/api/auth/logout`, {}, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          timeout: 5000
-        });
+        await axios.post(
+          `${API_BASE_URL}/api/auth/logout`,
+          {},
+          { headers: { Authorization: `Bearer ${token}` }, timeout: 5000 }
+        );
       }
-    } catch (error) {
-      console.error('Logout error:', error);
-    } finally {
-      await AsyncStorage.multiRemove(['authToken', 'refreshToken', 'userName', 'userEmail', 'userRole', 'userData']);
-      navigation.navigate('Login');
-    }
+    } catch {}
+    await AsyncStorage.multiRemove([
+      'authToken', 'refreshToken', 'userName',
+      'userEmail', 'userRole', 'userData',
+    ]);
+    navigation.navigate('Login');
   };
 
   const confirmLogout = () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to log out?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Logout', onPress: handleLogout, style: 'destructive' },
-      ]
-    );
+    Alert.alert('Logout', 'Are you sure you want to log out?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Logout', onPress: handleLogout, style: 'destructive' },
+    ]);
   };
 
   const navigateToProfile = () => navigation.navigate('Profile');
@@ -498,42 +443,35 @@ const HomeScreen = () => {
     try {
       const date = new Date(dateString);
       const now = new Date();
-      const diffMs = now.getTime() - date.getTime();
-      const diffMins = Math.floor(diffMs / 60000);
-      const diffHours = Math.floor(diffMs / 3600000);
-      const diffDays = Math.floor(diffMs / 86400000);
-
+      const diffMins = Math.floor((now.getTime() - date.getTime()) / 60000);
       if (diffMins < 1) return 'Just now';
-      if (diffMins < 60) return `${diffMins}m ago`;
-      if (diffHours < 24) return `${diffHours}h ago`;
-      if (diffDays < 7) return `${diffDays}d ago`;
-      
+      if (diffMins < 60) return `${diffMins} min ago`;
+      const diffHours = Math.floor(diffMins / 60);
+      if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+      const diffDays = Math.floor(diffHours / 24);
+      if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
       return date.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+        month: 'short', day: 'numeric', year: 'numeric'
       });
-    } catch (error) {
-      return dateString;
-    }
+    } catch { return dateString; }
   };
 
   const getPriorityIcon = (priority: string) => {
-    switch (priority) {
-      case 'urgent': return { icon: 'warning', color: '#FF3B30' };
-      case 'high': return { icon: 'error', color: '#FF9500' };
-      case 'medium': return { icon: 'info', color: '#FFCC00' };
-      case 'low': return { icon: 'low-priority', color: '#34C759' };
-      default: return { icon: 'help', color: '#8E8E93' };
-    }
+    const map: Record<string, { icon: string; color: string; label: string }> = {
+      urgent: { icon: 'warning', color: '#FF3B30', label: 'Urgent' },
+      high:   { icon: 'error',   color: '#FF9500', label: 'High' },
+      medium: { icon: 'info',    color: '#FFCC00', label: 'Medium' },
+      low:    { icon: 'low-priority', color: '#34C759', label: 'Low' },
+    };
+    return map[priority] || { icon: 'help', color: '#8E8E93', label: 'Unknown' };
   };
 
   const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'active': return { icon: 'access-time', color: '#007AFF' };
-      case 'resolved': return { icon: 'check-circle', color: '#34C759' };
-      default: return { icon: 'help', color: '#8E8E93' };
-    }
+    const map: Record<string, { icon: string; color: string; label: string }> = {
+      active:   { icon: 'access-time',  color: '#007AFF', label: 'Active' },
+      resolved: { icon: 'check-circle', color: '#34C759', label: 'Resolved' },
+    };
+    return map[status] || { icon: 'help', color: '#8E8E93', label: 'Unknown' };
   };
 
   const filteredRecords = records.filter(r =>
@@ -542,95 +480,108 @@ const HomeScreen = () => {
 
   const renderRecord = ({ item }: { item: MedicalRecord }) => {
     const isExpanded = expandedId === item._id;
-    const priorityIcon = getPriorityIcon(item.priority);
-    const statusIcon = getStatusIcon(item.status);
+    const priorityInfo = getPriorityIcon(item.priority);
+    const statusInfo = getStatusIcon(item.status);
     const isUpdating = updatingRecord === item._id;
-
-    const handleRecordPress = () => {
-      // @ts-ignore: navigation param type workaround
-      navigation.navigate('RecordDetail', { record: item });
-    };
-
-    const getStatusBadgeStyle = (status: string) => {
-      switch (status) {
-        case 'active': return styles.activeBadge;
-        case 'resolved': return styles.resolvedBadge;
-        default: return {};
-      }
-    };
-
-    const getPriorityBadgeStyle = (priority: string) => {
-      switch (priority) {
-        case 'urgent': return styles.urgentBadge;
-        case 'high': return styles.highBadge;
-        case 'medium': return styles.mediumBadge;
-        case 'low': return styles.lowBadge;
-        default: return {};
-      }
-    };
 
     return (
       <TouchableOpacity
         style={[styles.card, isExpanded && styles.cardExpanded]}
-        onPress={handleRecordPress}
+        onPress={() => setExpandedId(isExpanded ? null : item._id)}
         activeOpacity={0.7}
       >
         <View style={styles.cardHeader}>
-          <View style={styles.cardTitleContainer}>
-            <View style={styles.avatar_record}>
-              <Icon name="person" size={16} color="#FFFFFF" />
-            </View>
-            <View>
+          <View style={styles.cardHeaderLeft}>
+            <View style={[styles.statusDot, { backgroundColor: statusInfo.color }]} />
+            <View style={styles.cardTitleContainer}>
               <Text style={styles.cardTitle} numberOfLines={1}>
-                {userRole === 'doctor' ? item.patient_id?.name : item.doctor_id?.name}
+                {item.diagnosis}
               </Text>
-              <Text style={styles.cardSubtitle}>
-                {userRole === 'doctor' ? 'Patient' : 'Doctor'}
+              <Text style={styles.cardDoctor}>
+                {item.doctor_id?.name || 'Dr. ' + (item.doctor_id?.name?.split(' ').pop() || 'Unknown')}
               </Text>
             </View>
           </View>
-          <Text style={styles.date}>{formatDate(item.updated_at)}</Text>
+          <Text style={styles.cardDate}>{formatDate(item.updated_at)}</Text>
         </View>
 
-        <View style={styles.cardContent}>
-          <Text style={styles.diagnosis} numberOfLines={1}>{item.diagnosis}</Text>
-          <View style={styles.badges}>
-            <View style={[styles.badge, getStatusBadgeStyle(item.status)]}>
-              <Icon name={statusIcon.icon} size={12} color={statusIcon.color} />
-              <Text style={[styles.badgeText, { color: statusIcon.color }]}> 
-                {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
+        <View style={styles.cardPreview}>
+          <View style={styles.previewRow}>
+            <Icon name="description" size={16} color="#8E8E93" />
+            <Text style={styles.previewText} numberOfLines={1}>
+              {item.treatment || 'No treatment information'}
+            </Text>
+          </View>
+          {item.symptoms && item.symptoms.length > 0 && (
+            <View style={styles.previewRow}>
+              <Icon name="sick" size={16} color="#8E8E93" />
+              <Text style={styles.previewText} numberOfLines={1}>
+                {item.symptoms.join(', ')}
               </Text>
             </View>
-            <View style={[styles.badge, getPriorityBadgeStyle(item.priority)]}>
-              <Icon name={priorityIcon.icon} size={12} color={priorityIcon.color} />
-              <Text style={[styles.badgeText, { color: priorityIcon.color }]}> 
-                {item.priority.charAt(0).toUpperCase() + item.priority.slice(1)}
+          )}
+        </View>
+
+        <View style={styles.cardFooter}>
+          <View style={styles.tagContainer}>
+            <View style={[styles.tag, { backgroundColor: `${priorityInfo.color}15` }]}>
+              <Icon name={priorityInfo.icon} size={12} color={priorityInfo.color} />
+              <Text style={[styles.tagText, { color: priorityInfo.color }]}>
+                {priorityInfo.label}
               </Text>
             </View>
+            <View style={[styles.tag, { backgroundColor: `${statusInfo.color}15` }]}>
+              <Icon name={statusInfo.icon} size={12} color={statusInfo.color} />
+              <Text style={[styles.tagText, { color: statusInfo.color }]}>
+                {statusInfo.label}
+              </Text>
+            </View>
+          </View>
+          
+          <View style={styles.cardActions}>
+            {userRole === 'doctor' && item.status === 'active' && (
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => updateRecordStatus(item._id, 'resolved')}
+                disabled={isUpdating}
+              >
+                {isUpdating ? (
+                  <ActivityIndicator size="small" color="#34C759" />
+                ) : (
+                  <Icon name="check-circle" size={20} color="#34C759" />
+                )}
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={() => navigation.navigate('RecordDetail', { record: item })}
+            >
+              <Icon name="chevron-right" size={20} color="#8E8E93" />
+            </TouchableOpacity>
           </View>
         </View>
 
         {isExpanded && (
-          <View style={styles.details}>
-            <View style={styles.detailRow}>
-              <Text style={styles.label}>Diagnosis</Text>
-              <Text style={styles.detailText}>{item.diagnosis}</Text>
+          <View style={styles.expandedContent}>
+            <View style={styles.expandedSection}>
+              <Text style={styles.expandedSectionTitle}>Diagnosis</Text>
+              <Text style={styles.expandedText}>{item.diagnosis}</Text>
             </View>
-
+            
             {item.treatment && (
-              <View style={styles.detailRow}>
-                <Text style={styles.label}>Treatment</Text>
-                <Text style={styles.detailText}>{item.treatment}</Text>
+              <View style={styles.expandedSection}>
+                <Text style={styles.expandedSectionTitle}>Treatment</Text>
+                <Text style={styles.expandedText}>{item.treatment}</Text>
               </View>
             )}
-
-            {item.symptoms?.length > 0 && (
-              <View style={styles.detailRow}>
-                <Text style={styles.label}>Symptoms</Text>
+            
+            {item.symptoms && item.symptoms.length > 0 && (
+              <View style={styles.expandedSection}>
+                <Text style={styles.expandedSectionTitle}>Symptoms</Text>
                 <View style={styles.symptomsContainer}>
                   {item.symptoms.map((symptom, index) => (
-                    <View key={index} style={styles.symptomTag}>
-                      <Text style={styles.symptomText}>{symptom}</Text>
+                    <View key={index} style={styles.symptomItem}>
+                      <Text style={styles.symptomItemText}>{symptom}</Text>
                     </View>
                   ))}
                 </View>
@@ -638,106 +589,45 @@ const HomeScreen = () => {
             )}
             
             {item.appointment_id && (
-              <View style={styles.detailRow}>
-                <Text style={styles.label}>Appointment</Text>
-                <Text style={styles.detailText}>
-                  {item.appointment_id.appointment_date && formatDate(item.appointment_id.appointment_date)}
-                  {item.appointment_id.appointment_time && ` at ${item.appointment_id.appointment_time}`}
-                </Text>
+              <View style={styles.expandedSection}>
+                <Text style={styles.expandedSectionTitle}>Appointment</Text>
+                <View style={styles.appointmentInfo}>
+                  <Icon name="event" size={16} color="#007AFF" />
+                  <Text style={styles.appointmentText}>
+                    {item.appointment_id.appointment_date || 'Date not set'} 
+                    {item.appointment_id.appointment_time && ` at ${item.appointment_id.appointment_time}`}
+                  </Text>
+                </View>
               </View>
             )}
-            
-            {userRole === 'doctor' && (
-              <View style={styles.actionButtonsContainer}>
-                {item.status !== 'active' && (
-                  <TouchableOpacity 
-                    style={[styles.statusButton, styles.activeButton]}
-                    onPress={() => updateRecordStatus(item._id, 'active')}
-                    disabled={isUpdating}
-                  >
-                    {isUpdating && item.status !== 'active' ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : (
-                      <>
-                        <Icon name="access-time" size={16} color="#FFFFFF" />
-                        <Text style={styles.statusButtonText}>Mark as Active</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                )}
-                
-                {item.status !== 'resolved' && (
-                  <TouchableOpacity 
-                    style={[styles.statusButton, styles.resolveButton]}
-                    onPress={() => updateRecordStatus(item._id, 'resolved')}
-                    disabled={isUpdating}
-                  >
-                    {isUpdating && item.status !== 'resolved' ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : (
-                      <>
-                        <Icon name="check-circle" size={16} color="#FFFFFF" />
-                        <Text style={styles.statusButtonText}>Mark as Resolved</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                )}
-              </View>
-            )}
-            
-            <View style={styles.expandedFooter}>
-              <Icon name="keyboard-arrow-up" size={20} color="#8E8E93" />
-              <Text style={styles.collapseText}>Tap to collapse</Text>
-            </View>
-          </View>
-        )}
-        
-        {!isExpanded && (
-          <View style={styles.cardFooter}>
-            <Icon name="keyboard-arrow-down" size={16} color="#8E8E93" />
-            <Text style={styles.moreText}>Tap for details</Text>
           </View>
         )}
       </TouchableOpacity>
     );
   };
 
-  // Chatbot Widget Component
   const ChatbotWidget = () => (
     <Animated.View
       style={[
-        styles.chatbotWidget,
-        {
-          transform: [{ translateX: position.x }, { translateY: position.y }],
-        },
+        styles.chatWidget,
+        { transform: [{ translateX: position.x }, { translateY: position.y }] },
       ]}
       {...panResponder.panHandlers}
     >
-      <TouchableOpacity 
-        style={styles.chatbotButton}
-        onPress={toggleChatbot}
-        activeOpacity={0.8}
-      >
+      <TouchableOpacity style={styles.chatButton} onPress={toggleChatbot} activeOpacity={0.8}>
         <LinearGradient
-          colors={['#00BFFF', '#1976d2']}
-          style={styles.chatbotGradient}
+          colors={['#0891b2', '#0e7490']}
+          style={styles.chatGradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
         >
-          <Icon name="chat" size={24} color="#FFFFFF" />
+          <Icon name="chat" size={28} color="#FFF" />
         </LinearGradient>
-        
         {unreadMessages > 0 && (
-          <View style={styles.notificationBadge}>
-            <Text style={styles.notificationText}>
-              {unreadMessages > 9 ? '9+' : unreadMessages}
-            </Text>
+          <View style={styles.unreadBadge}>
+            <Text style={styles.unreadText}>{unreadMessages}</Text>
           </View>
         )}
-        
-        <View style={styles.dragHandle}>
-          <View style={styles.dragDot} />
-          <View style={styles.dragDot} />
-          <View style={styles.dragDot} />
-        </View>
       </TouchableOpacity>
     </Animated.View>
   );
@@ -745,13 +635,9 @@ const HomeScreen = () => {
   if (loading && records.length === 0) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <StatusBar barStyle="light-content" backgroundColor="#0A84FF" />
-        <LinearGradient
-          colors={['#0A84FF', '#5E5CE6']}
-          style={StyleSheet.absoluteFill}
-        />
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#FFFFFF" />
+          <ActivityIndicator size="large" color="#0891b2" />
           <Text style={styles.loadingText}>Loading your medical records...</Text>
         </View>
       </SafeAreaView>
@@ -760,268 +646,187 @@ const HomeScreen = () => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor="#0A84FF" />
-      
-      {/* New Data Notification Banner */}
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+
       {hasNewData && (
         <View style={styles.newDataBanner}>
-          <LinearGradient
-            colors={['#32D74B', '#30DB84']}
-            style={StyleSheet.absoluteFill}
-          />
-          <View style={styles.newDataContent}>
-            <Icon name="new-releases" size={20} color="#FFFFFF" />
-            <Text style={styles.newDataText}>New medical records available</Text>
-            <TouchableOpacity onPress={() => setHasNewData(false)}>
-              <Icon name="close" size={20} color="#FFFFFF" />
-            </TouchableOpacity>
-          </View>
+          <Icon name="fiber-new" size={18} color="#FFF" />
+          <Text style={styles.newDataText}>New records available</Text>
+          <TouchableOpacity onPress={() => setHasNewData(false)}>
+            <Icon name="close" size={18} color="#FFF" />
+          </TouchableOpacity>
         </View>
       )}
 
-      {/* Header */}
-      <View style={styles.headerContainer}>
-        <LinearGradient
-          colors={['#0A84FF', '#5E5CE6']}
-          style={styles.headerGradient}
-        >
-          <View style={styles.header}>
-            <View style={styles.headerLeft}>
-              <View style={styles.avatarContainer}>
-                <View style={styles.avatar}>
-                  <Icon name="person" size={24} color="#FFFFFF" />
-                </View>
-                <View style={styles.userInfo}>
-                  <Text style={styles.greeting}>Welcome back,</Text>
-                  <Text style={styles.userName}>{userName}</Text>
-                </View>
-              </View>
-              <View style={styles.roleBadge}>
-                <Text style={styles.roleText}>
-                  {userRole === 'doctor' ? 'Doctor' : 'Patient'}
-                </Text>
-              </View>
+      <View style={styles.header}>
+        <View style={styles.headerTop}>
+          <View style={styles.userInfo}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>
+                {userName ? userName.charAt(0).toUpperCase() : 'U'}
+              </Text>
             </View>
-            
-            <View style={styles.headerRight}>
-              <TouchableOpacity 
-                onPress={handleRefresh}
-                style={styles.iconButton}
-                disabled={refreshing}
-              >
-                {refreshing ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <Icon name="refresh" size={24} color="#FFFFFF" />
-                )}
-              </TouchableOpacity>
-              <TouchableOpacity onPress={confirmLogout} style={styles.iconButton}>
-                <Icon name="logout" size={22} color="#FFFFFF" />
-              </TouchableOpacity>
+            <View style={styles.userTextContainer}>
+              <Text style={styles.greeting}>Welcome back,</Text>
+              <Text style={styles.userName}>{userName || 'Patient'}</Text>
             </View>
           </View>
+          
+          <View style={styles.headerActions}>
+            <TouchableOpacity style={styles.iconButton} onPress={navigateToMessages}>
+              <Icon name="message" size={24} color="#374151" />
+              {unreadMessages > 0 && (
+                <View style={styles.messageBadge}>
+                  <Text style={styles.messageBadgeText}>{unreadMessages}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.iconButton} onPress={confirmLogout}>
+              <Icon name="logout" size={24} color="#374151" />
+            </TouchableOpacity>
+          </View>
+        </View>
 
-          {/* Stats Overview */}
-          <View style={styles.headerStats}>
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{records.length}</Text>
-              <Text style={styles.statLabel}>Total Records</Text>
-            </View>
-            
-            <View style={styles.statDivider} />
-            
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>
-                {records.filter(r => r.status === 'active').length}
-              </Text>
-              <Text style={styles.statLabel}>Active</Text>
-            </View>
-            
-            <View style={styles.statDivider} />
-            
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>
-                {records.filter(r => r.status === 'resolved').length}
-              </Text>
-              <Text style={styles.statLabel}>Resolved</Text>
-            </View>
+        <View style={styles.statsContainer}>
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>{records.length}</Text>
+            <Text style={styles.statLabel}>Total</Text>
           </View>
-        </LinearGradient>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>
+              {records.filter(r => r.status === 'active').length}
+            </Text>
+            <Text style={styles.statLabel}>Active</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>
+              {records.filter(r => r.status === 'resolved').length}
+            </Text>
+            <Text style={styles.statLabel}>Resolved</Text>
+          </View>
+        </View>
       </View>
 
-      {/* Main Content */}
+      <View style={styles.quickActions}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <TouchableOpacity style={styles.quickActionItem} onPress={navigateToFindDoctor}>
+            <View style={[styles.quickActionIcon, { backgroundColor: '#e0f2fe' }]}>
+              <Icon name="search" size={24} color="#0891b2" />
+            </View>
+            <Text style={styles.quickActionLabel}>Find Doctor</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.quickActionItem} onPress={navigateToHistoryAppointment}>
+            <View style={[styles.quickActionIcon, { backgroundColor: '#fae8ff' }]}>
+              <Icon name="history" size={24} color="#a855f7" />
+            </View>
+            <Text style={styles.quickActionLabel}>History</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.quickActionItem} onPress={navigateToProfile}>
+            <View style={[styles.quickActionIcon, { backgroundColor: '#dcfce7' }]}>
+              <Icon name="person" size={24} color="#22c55e" />
+            </View>
+            <Text style={styles.quickActionLabel}>Profile</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.quickActionItem} onPress={navigateToFeedback}>
+            <View style={[styles.quickActionIcon, { backgroundColor: '#fff3cd' }]}>
+              <Icon name="star" size={24} color="#fbbf24" />
+            </View>
+            <Text style={styles.quickActionLabel}>Feedback</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.quickActionItem} onPress={navigateToSettings}>
+            <View style={[styles.quickActionIcon, { backgroundColor: '#fee2e2' }]}>
+              <Icon name="settings" size={24} color="#ef4444" />
+            </View>
+            <Text style={styles.quickActionLabel}>Settings</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
+
+      <View style={styles.filterTabs}>
+        <TouchableOpacity
+          style={[styles.filterTab, filter === 'all' && styles.filterTabActive]}
+          onPress={() => setFilter('all')}
+        >
+          <Text style={[styles.filterTabText, filter === 'all' && styles.filterTabTextActive]}>
+            All
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.filterTab, filter === 'active' && styles.filterTabActive]}
+          onPress={() => setFilter('active')}
+        >
+          <Text style={[styles.filterTabText, filter === 'active' && styles.filterTabTextActive]}>
+            Active
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.filterTab, filter === 'resolved' && styles.filterTabActive]}
+          onPress={() => setFilter('resolved')}
+        >
+          <Text style={[styles.filterTabText, filter === 'resolved' && styles.filterTabTextActive]}>
+            Resolved
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {error && (
+        <View style={styles.errorContainer}>
+          <Icon name="error-outline" size={20} color="#ef4444" />
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity onPress={refreshRecords}>
+            <Text style={styles.retryText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       <FlatList
         data={filteredRecords}
         keyExtractor={item => item._id}
         renderItem={renderRecord}
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl 
-            refreshing={refreshing} 
-            onRefresh={handleRefresh}
-            colors={['#0A84FF']}
-            tintColor={'#0A84FF'}
-            progressBackgroundColor="#FFFFFF"
-            progressViewOffset={hasNewData ? 40 : 0}
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={refreshRecords}
+            colors={['#0891b2']}
+            tintColor="#0891b2"
           />
-        }
-        ListHeaderComponent={
-          <View style={styles.listHeader}>
-            {/* Error Banner */}
-            {error && (
-              <View style={styles.errorBanner}>
-                <Icon name="error" size={20} color="#FFFFFF" />
-                <Text style={styles.errorText}>{error}</Text>
-                <TouchableOpacity onPress={handleRefresh}>
-                  <Text style={styles.retryText}>Retry</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {/* Quick Actions Section */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Quick Actions</Text>
-              <ScrollView 
-                horizontal 
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.actionsContent}
-              >
-                <TouchableOpacity 
-                  style={styles.quickAction}
-                  onPress={navigateToFindDoctor}
-                >
-                  <LinearGradient
-                    colors={['#32D74B', '#30DB84']}
-                    style={styles.quickActionIcon}
-                  >
-                    <Icon name="search" size={24} color="#FFFFFF" />
-                  </LinearGradient>
-                  <Text style={styles.quickActionText}>Find Doctor</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                  style={styles.quickAction}
-                  onPress={navigateToHistoryAppointment}
-                >
-                  <LinearGradient
-                    colors={['#BF5AF2', '#FF375F']}
-                    style={styles.quickActionIcon}
-                  >
-                    <Icon name="history" size={24} color="#FFFFFF" />
-                  </LinearGradient>
-                  <Text style={styles.quickActionText}>Appointment History</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.quickAction}
-                  onPress={navigateToMessages}
-                >
-                  <LinearGradient
-                    colors={['#FF9F0A', '#FFCC00']}
-                    style={styles.quickActionIcon}
-                  >
-                    <Icon name="message" size={24} color="#FFFFFF" />
-                  </LinearGradient>
-                  <Text style={styles.quickActionText}>Messages</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                  style={styles.quickAction}
-                  onPress={navigateToProfile}
-                >
-                  <LinearGradient
-                    colors={['#5E5CE6', '#0A84FF']}
-                    style={styles.quickActionIcon}
-                  >
-                    <Icon name="person" size={24} color="#FFFFFF" />
-                  </LinearGradient>
-                  <Text style={styles.quickActionText}>Profile</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                  style={styles.quickAction}
-                  onPress={navigateToFeedback}
-                >
-                  <LinearGradient
-                    colors={['#FFD700', '#FFB300']}
-                    style={styles.quickActionIcon}
-                  >
-                    <Icon name="star" size={24} color="#FFFFFF" />
-                  </LinearGradient>
-                  <Text style={styles.quickActionText}>Feedback</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                  style={styles.quickAction}
-                  onPress={navigateToSettings}
-                >
-                  <LinearGradient
-                    colors={['#FF453A', '#FF375F']}
-                    style={styles.quickActionIcon}
-                  >
-                    <Icon name="settings" size={24} color="#FFFFFF" />
-                  </LinearGradient>
-                  <Text style={styles.quickActionText}>Settings</Text>
-                </TouchableOpacity>
-              </ScrollView>
-            </View>
-
-            {/* Filter Tabs */}
-            <View style={styles.filterContainer}>
-              {[
-                { key: 'all', label: 'All Records', icon: 'list' },
-                { key: 'active', label: 'Active', icon: 'access-time' },
-                { key: 'resolved', label: 'Resolved', icon: 'check-circle' }
-              ].map(tab => (
-                <TouchableOpacity 
-                  key={tab.key} 
-                  onPress={() => setFilter(tab.key as any)}
-                  style={[styles.filterTab, filter === tab.key && styles.filterTabActive]}
-                >
-                  <Icon 
-                    name={tab.icon} 
-                    size={16} 
-                    color={filter === tab.key ? '#0A84FF' : '#8E8E93'} 
-                    style={styles.filterIcon}
-                  />
-                  <Text style={[styles.filterTabText, filter === tab.key && styles.filterTabTextActive]}>
-                    {tab.label}
-                  </Text>
-                  {filter === tab.key && <View style={styles.filterTabIndicator} />}
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
         }
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Icon name="folder-open" size={60} color="#C7C7CC" />
-            <Text style={styles.emptyStateTitle}>No records found</Text>
-            <Text style={styles.emptyStateText}>
-              {(filter !== 'all')
+            <Icon name="folder-open" size={64} color="#d1d5db" />
+            <Text style={styles.emptyTitle}>No records found</Text>
+            <Text style={styles.emptySubtitle}>
+              {filter !== 'all'
                 ? `No ${filter} medical records available`
                 : "You don't have any medical records yet"}
             </Text>
-            <TouchableOpacity 
-              style={styles.refreshButtonLarge}
-              onPress={handleRefresh}
-            >
-              <Text style={styles.refreshButtonText}>Refresh</Text>
-            </TouchableOpacity>
           </View>
         }
-        contentContainerStyle={[
-          styles.listContent,
-          { paddingTop: hasNewData ? 40 : 0 }
-        ]}
-        showsVerticalScrollIndicator={false}
-        style={styles.mainContent}
-        onEndReachedThreshold={0.5}
-        maxToRenderPerBatch={10}
-        windowSize={21}
       />
 
-      {/* Chatbot Widget */}
       <ChatbotWidget />
+
+      <OnboardingGuide
+        visible={showOnboarding}
+        mode="slides"
+        onComplete={handleOnboardingComplete}
+        onSpotlightComplete={handleSpotlightComplete}
+      />
+
+      <OnboardingGuide
+        visible={showSpotlight}
+        mode="spotlight"
+        onComplete={handleOnboardingComplete}
+        onSpotlightComplete={handleSpotlightComplete}
+      />
     </SafeAreaView>
   );
 };
@@ -1029,278 +834,232 @@ const HomeScreen = () => {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#F2F2F7',
+    backgroundColor: '#f9fafb',
   },
-  // New Data Banner
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#6b7280',
+    fontWeight: '500',
+  },
   newDataBanner: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    zIndex: 1001,
-    height: 40,
-    justifyContent: 'center',
-  },
-  newDataContent: {
+    zIndex: 1000,
+    backgroundColor: '#0891b2',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
+    paddingVertical: 10,
   },
   newDataText: {
     flex: 1,
     color: '#FFFFFF',
+    fontSize: 14,
     fontWeight: '600',
     marginLeft: 8,
-    fontSize: 14,
-  },
-  // Error Banner
-  errorBanner: {
-    backgroundColor: '#FF3B30',
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    marginHorizontal: 16,
-    marginTop: 16,
-    borderRadius: 8,
-  },
-  errorText: {
-    flex: 1,
-    color: '#FFFFFF',
-    marginLeft: 8,
-    fontSize: 14,
-  },
-  retryText: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-    textDecorationLine: 'underline',
-  },
-  // Header
-  headerContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 1000,
-  },
-  headerGradient: {
-    paddingTop: 60,
-    paddingBottom: 20,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 8,
   },
   header: {
+    backgroundColor: '#FFFFFF',
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  headerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    paddingHorizontal: 20,
+    alignItems: 'center',
     marginBottom: 20,
   },
-  headerLeft: {
-    flex: 1,
-  },
-  headerRight: {
+  userInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  avatarContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
   },
   avatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#0891b2',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.5)',
   },
-  userInfo: {
-    flex: 1,
+  avatarText: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  userTextContainer: {
+    justifyContent: 'center',
   },
   greeting: {
     fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.8)',
-    marginBottom: 4,
-    fontWeight: '500',
+    color: '#6b7280',
+    marginBottom: 2,
   },
   userName: {
-    fontSize: 20,
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  iconButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#f3f4f6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  messageBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    backgroundColor: '#ef4444',
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  messageBadgeText: {
+    fontSize: 10,
     fontWeight: '700',
     color: '#FFFFFF',
   },
-  roleBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    alignSelf: 'flex-start',
-  },
-  roleText: {
-    fontSize: 12,
-    color: '#FFFFFF',
-    fontWeight: '600',
-  },
-  iconButton: {
-    padding: 8,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    marginLeft: 12,
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  // Header Stats
-  headerStats: {
+  statsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    marginHorizontal: 20,
+    backgroundColor: '#f8fafc',
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    padding: 16,
   },
   statItem: {
     alignItems: 'center',
     flex: 1,
   },
-  statNumber: {
+  statValue: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: '#0891b2',
     marginBottom: 4,
   },
   statLabel: {
-    fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 13,
+    color: '#6b7280',
     fontWeight: '500',
   },
   statDivider: {
     width: 1,
-    height: 30,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    height: '100%',
+    backgroundColor: '#e5e7eb',
   },
-  // Main content
-  mainContent: {
-    flex: 1,
-    marginTop: 260,
-  },
-  listHeader: {
-    backgroundColor: '#F2F2F7',
-    paddingTop: 0,
-  },
-  section: {
+  quickActions: {
     paddingHorizontal: 16,
-    marginBottom: 16,
+    paddingVertical: 20,
   },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#000000',
-    marginBottom: 16,
-  },
-  actionsContent: {
-    paddingBottom: 8,
-  },
-  quickAction: {
+  quickActionItem: {
     alignItems: 'center',
-    marginRight: 16,
-    width: 80,
+    marginRight: 20,
+    width: 70,
   },
   quickActionIcon: {
-    width: 60,
-    height: 60,
-    borderRadius: 16,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
   },
-  quickActionText: {
-    color: '#000000',
-    fontWeight: '500',
+  quickActionLabel: {
     fontSize: 12,
+    color: '#374151',
+    fontWeight: '500',
     textAlign: 'center',
   },
-  filterContainer: {
+  filterTabs: {
     flexDirection: 'row',
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: '#FFFFFF',
-    marginBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
+    marginBottom: 16,
   },
   filterTab: {
-    flexDirection: 'row',
+    flex: 1,
+    paddingVertical: 10,
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginRight: 8,
-    position: 'relative',
-    borderRadius: 10,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
   },
   filterTabActive: {
-    backgroundColor: '#F2F2F7',
-  },
-  filterIcon: {
-    marginRight: 6,
+    borderBottomColor: '#0891b2',
   },
   filterTabText: {
     fontSize: 14,
-    fontWeight: '500',
-    color: '#8E8E93',
-  },
-  filterTabTextActive: {
-    color: '#0A84FF',
+    color: '#9ca3af',
     fontWeight: '600',
   },
-  filterTabIndicator: {
-    position: 'absolute',
-    bottom: 0,
-    left: 16,
-    right: 16,
-    height: 3,
-    backgroundColor: '#0A84FF',
-    borderTopLeftRadius: 2,
-    borderTopRightRadius: 2,
+  filterTabTextActive: {
+    color: '#0891b2',
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fee2e2',
+    marginHorizontal: 16,
+    marginBottom: 16,
+    padding: 12,
+    borderRadius: 12,
+  },
+  errorText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#991b1b',
+    marginLeft: 8,
+  },
+  retryText: {
+    fontSize: 14,
+    color: '#991b1b',
+    fontWeight: '600',
+    textDecorationLine: 'underline',
   },
   listContent: {
-    paddingBottom: 20,
+    paddingHorizontal: 16,
+    paddingBottom: 100,
   },
   card: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    marginHorizontal: 16,
-    marginBottom: 12,
     padding: 16,
+    marginBottom: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.05,
     shadowRadius: 8,
     elevation: 2,
   },
   cardExpanded: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
+    shadowOpacity: 0.1,
     shadowRadius: 12,
     elevation: 4,
   },
@@ -1310,252 +1069,189 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: 12,
   },
-  cardTitleContainer: {
+  cardHeaderLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
-    marginRight: 12,
+  },
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 10,
+  },
+  cardTitleContainer: {
+    flex: 1,
   },
   cardTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#000000',
+    color: '#111827',
     marginBottom: 2,
   },
-  cardSubtitle: {
+  cardDoctor: {
+    fontSize: 13,
+    color: '#6b7280',
+  },
+  cardDate: {
     fontSize: 12,
-    color: '#8E8E93',
+    color: '#9ca3af',
   },
-  date: {
-    fontSize: 12,
-    color: '#8E8E93',
-    fontWeight: '500',
-  },
-  cardContent: {
-    marginBottom: 8,
-  },
-  diagnosis: {
-    fontSize: 14,
-    color: '#000000',
+  cardPreview: {
     marginBottom: 12,
-    fontWeight: '500',
   },
-  badges: {
+  previewRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  previewText: {
+    fontSize: 13,
+    color: '#4b5563',
+    marginLeft: 8,
+    flex: 1,
+  },
+  cardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  tagContainer: {
+    flexDirection: 'row',
     gap: 8,
   },
-  badge: {
+  tag: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
-    gap: 4,
+    paddingVertical: 4,
+    borderRadius: 12,
   },
-  badgeText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  activeBadge: { backgroundColor: 'rgba(0, 122, 255, 0.1)' },
-  resolvedBadge: { backgroundColor: 'rgba(52, 199, 89, 0.1)' },
-  urgentBadge: { backgroundColor: 'rgba(255, 59, 48, 0.1)' },
-  highBadge: { backgroundColor: 'rgba(255, 149, 0, 0.1)' },
-  mediumBadge: { backgroundColor: 'rgba(255, 204, 0, 0.1)' },
-  lowBadge: { backgroundColor: 'rgba(52, 199, 89, 0.1)' },
-  cardFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#F2F2F7',
-  },
-  moreText: {
-    fontSize: 12,
-    color: '#8E8E93',
+  tagText: {
+    fontSize: 11,
+    fontWeight: '600',
     marginLeft: 4,
   },
-  avatar_record: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#1717d8',
+  cardActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  actionButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#f3f4f6',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
   },
-  details: {
+  expandedContent: {
     marginTop: 16,
     paddingTop: 16,
     borderTopWidth: 1,
-    borderTopColor: '#F2F2F7',
+    borderTopColor: '#f3f4f6',
   },
-  detailRow: {
+  expandedSection: {
     marginBottom: 16,
   },
-  label: {
-    fontSize: 12,
+  expandedSectionTitle: {
+    fontSize: 13,
     fontWeight: '600',
-    color: '#8E8E93',
-    marginBottom: 6,
+    color: '#6b7280',
+    marginBottom: 8,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  detailText: {
-    fontSize: 14,
-    color: '#000000',
-    lineHeight: 20,
+  expandedText: {
+    fontSize: 15,
+    color: '#1f2937',
+    lineHeight: 22,
   },
   symptomsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
   },
-  symptomTag: {
-    backgroundColor: '#F2F2F7',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  symptomText: {
-    fontSize: 12,
-    color: '#000000',
-  },
-  actionButtonsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginTop: 16,
-    marginBottom: 8,
-    gap: 12,
-  },
-  statusButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
+  symptomItem: {
+    backgroundColor: '#f3f4f6',
     paddingHorizontal: 12,
-    borderRadius: 8,
-    gap: 6,
+    paddingVertical: 6,
+    borderRadius: 12,
   },
-  activeButton: {
-    backgroundColor: '#007AFF',
+  symptomItemText: {
+    fontSize: 13,
+    color: '#374151',
   },
-  resolveButton: {
-    backgroundColor: '#34C759',
-  },
-  statusButtonText: {
-    color: '#FFFFFF',
-    fontWeight: '500',
-    fontSize: 12,
-  },
-  expandedFooter: {
+  appointmentInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 8,
+    backgroundColor: '#f0f9ff',
+    padding: 12,
+    borderRadius: 12,
   },
-  collapseText: {
-    fontSize: 12,
-    color: '#8E8E93',
-    marginLeft: 4,
+  appointmentText: {
+    fontSize: 14,
+    color: '#0369a1',
+    marginLeft: 8,
+    flex: 1,
   },
   emptyState: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 60,
-    paddingHorizontal: 40,
   },
-  emptyStateTitle: {
+  emptyTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#000000',
+    color: '#374151',
     marginTop: 16,
     marginBottom: 8,
   },
-  emptyStateText: {
+  emptySubtitle: {
     fontSize: 14,
-    color: '#8E8E93',
+    color: '#9ca3af',
     textAlign: 'center',
     lineHeight: 20,
-    marginBottom: 24,
   },
-  refreshButtonLarge: {
-    backgroundColor: '#0A84FF',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 10,
-  },
-  refreshButtonText: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#FFFFFF',
-  },
-  // Chatbot Widget Styles
-  chatbotWidget: {
+  chatWidget: {
     position: 'absolute',
     zIndex: 1000,
     elevation: 10,
   },
-  chatbotButton: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+  chatButton: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.2,
     shadowRadius: 8,
-    elevation: 6,
+    elevation: 5,
+  },
+  chatGradient: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  chatbotGradient: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  notificationBadge: {
+  unreadBadge: {
     position: 'absolute',
     top: -4,
     right: -4,
-    backgroundColor: '#FF3B30',
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    backgroundColor: '#ef4444',
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
     borderColor: '#FFFFFF',
   },
-  notificationText: {
+  unreadText: {
+    fontSize: 11,
+    fontWeight: '700',
     color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  dragHandle: {
-    position: 'absolute',
-    bottom: -20,
-    width: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 4,
-  },
-  dragDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#C7C7CC',
-    marginVertical: 1,
   },
 });
 
