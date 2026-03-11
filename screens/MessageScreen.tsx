@@ -2756,7 +2756,6 @@ export const styles = StyleSheet.create({
     borderBottomRightRadius: 6,
   },
 
-  // Their messages (soft gray)
   theirMessageBubble: {
   backgroundColor: '#E2E8F0',  
   borderBottomLeftRadius: 6,
