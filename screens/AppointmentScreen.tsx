@@ -52,7 +52,8 @@ interface BookingScreenProps {
 
 const API_BASE_URL = 'http://localhost:3000';
 
-// Component con cho step indicator
+// ==================== STEP INDICATOR ====================
+
 const StepIndicator: React.FC<{ currentStep: number }> = ({ currentStep }) => {
   const steps = [
     { id: 1, label: 'Date & Time', icon: 'calendar-outline' },
@@ -65,35 +66,41 @@ const StepIndicator: React.FC<{ currentStep: number }> = ({ currentStep }) => {
       {steps.map((step, index) => (
         <React.Fragment key={step.id}>
           <View style={stepStyles.stepItem}>
-            <View style={[
-              stepStyles.stepCircle,
-              currentStep >= step.id ? stepStyles.stepCircleActive : stepStyles.stepCircleInactive,
-              currentStep === step.id && stepStyles.stepCircleCurrent,
-            ]}>
+            <View
+              style={[
+                stepStyles.stepCircle,
+                currentStep >= step.id ? stepStyles.stepCircleActive : stepStyles.stepCircleInactive,
+                currentStep === step.id && stepStyles.stepCircleCurrent,
+              ]}
+            >
               {currentStep > step.id ? (
                 <Ionicons name="checkmark" size={20} color="white" />
               ) : (
-                <Ionicons 
-                  name={step.icon as any} 
-                  size={currentStep === step.id ? 18 : 16} 
-                  color={currentStep >= step.id ? "white" : "#999"} 
+                <Ionicons
+                  name={step.icon as any}
+                  size={currentStep === step.id ? 18 : 16}
+                  color={currentStep >= step.id ? 'white' : '#999'}
                 />
               )}
             </View>
-            <Text style={[
-              stepStyles.stepLabel,
-              currentStep >= step.id ? stepStyles.stepLabelActive : stepStyles.stepLabelInactive,
-              currentStep === step.id && stepStyles.stepLabelCurrent,
-            ]}>
+            <Text
+              style={[
+                stepStyles.stepLabel,
+                currentStep >= step.id ? stepStyles.stepLabelActive : stepStyles.stepLabelInactive,
+                currentStep === step.id && stepStyles.stepLabelCurrent,
+              ]}
+            >
               {step.label}
             </Text>
           </View>
-          
+
           {index < steps.length - 1 && (
-            <View style={[
-              stepStyles.connector,
-              currentStep > step.id ? stepStyles.connectorActive : stepStyles.connectorInactive
-            ]} />
+            <View
+              style={[
+                stepStyles.connector,
+                currentStep > step.id ? stepStyles.connectorActive : stepStyles.connectorInactive,
+              ]}
+            />
           )}
         </React.Fragment>
       ))}
@@ -168,7 +175,8 @@ const stepStyles = StyleSheet.create({
   },
 });
 
-// Component con cho doctor card
+// ==================== DOCTOR CARD ====================
+
 const DoctorCard: React.FC<{ doctor: Doctor }> = ({ doctor }) => {
   return (
     <View style={doctorCardStyles.container}>
@@ -183,12 +191,16 @@ const DoctorCard: React.FC<{ doctor: Doctor }> = ({ doctor }) => {
             <Ionicons name="person-circle" size={60} color="white" />
           </View>
           <View style={doctorCardStyles.headerInfo}>
-            <Text style={doctorCardStyles.doctorName}>Dr. {doctor.user_id?.name || doctor.name || 'Unknown Doctor'}</Text>
-            <Text style={doctorCardStyles.specialty}>{doctor.specialty_id?.name || doctor.specialty || 'General Practice'}</Text>
+            <Text style={doctorCardStyles.doctorName}>
+              Dr. {doctor.user_id?.name || doctor.name || 'Unknown Doctor'}
+            </Text>
+            <Text style={doctorCardStyles.specialty}>
+              {doctor.specialty_id?.name || doctor.specialty || 'General Practice'}
+            </Text>
           </View>
         </View>
       </LinearGradient>
-      
+
       <View style={doctorCardStyles.content}>
         <View style={doctorCardStyles.statsRow}>
           {doctor.years_of_experience !== undefined && (
@@ -197,14 +209,14 @@ const DoctorCard: React.FC<{ doctor: Doctor }> = ({ doctor }) => {
               <Text style={doctorCardStyles.statText}>{doctor.years_of_experience} years</Text>
             </View>
           )}
-          
+
           {doctor.rating !== undefined && (
             <View style={doctorCardStyles.statItem}>
               <Ionicons name="star" size={16} color="#FFD700" />
               <Text style={doctorCardStyles.statText}>{doctor.rating.toFixed(1)}</Text>
             </View>
           )}
-          
+
           {doctor.consultation_fee !== undefined && (
             <View style={doctorCardStyles.statItem}>
               <Ionicons name="pricetag" size={16} color="#4CAF50" />
@@ -212,7 +224,7 @@ const DoctorCard: React.FC<{ doctor: Doctor }> = ({ doctor }) => {
             </View>
           )}
         </View>
-        
+
         <View style={doctorCardStyles.availabilityContainer}>
           {doctor.isAvailable ? (
             <View style={doctorCardStyles.availableBadge}>
@@ -326,7 +338,8 @@ const doctorCardStyles = StyleSheet.create({
   },
 });
 
-// Component con cho time slot picker
+// ==================== TIME SLOT PICKER ====================
+
 const TimeSlotPicker: React.FC<{
   slots: TimeSlot[];
   selectedTime: string;
@@ -336,10 +349,10 @@ const TimeSlotPicker: React.FC<{
   const renderTimeSlot = (slot: TimeSlot) => {
     const isSelected = selectedTime === slot.time;
     const isAvailable = slot.isAvailable && !slot.isReserved && !slot.isBooked;
-    
+
     let slotStyle = timeSlotStyles.slotAvailable;
     let textStyle = timeSlotStyles.slotTextAvailable;
-    
+
     if (isSelected) {
       slotStyle = timeSlotStyles.slotSelected;
       textStyle = timeSlotStyles.slotTextSelected;
@@ -347,7 +360,7 @@ const TimeSlotPicker: React.FC<{
       slotStyle = timeSlotStyles.slotUnavailable;
       textStyle = timeSlotStyles.slotTextUnavailable;
     }
-    
+
     return (
       <TouchableOpacity
         key={slot.time}
@@ -356,10 +369,8 @@ const TimeSlotPicker: React.FC<{
         disabled={!isAvailable}
         activeOpacity={0.7}
       >
-        <Text style={[timeSlotStyles.slotText, textStyle]}>
-          {slot.time}
-        </Text>
-        
+        <Text style={[timeSlotStyles.slotText, textStyle]}>{slot.time}</Text>
+
         {!isAvailable && (
           <View style={timeSlotStyles.slotIcon}>
             {slot.isReserved ? (
@@ -382,8 +393,7 @@ const TimeSlotPicker: React.FC<{
     );
   }
 
-  // Chia slots thành các hàng 3 slot
-  const rows = [];
+  const rows: TimeSlot[][] = [];
   for (let i = 0; i < slots.length; i += 3) {
     rows.push(slots.slice(i, i + 3));
   }
@@ -395,7 +405,7 @@ const TimeSlotPicker: React.FC<{
           <Ionicons name="time-outline" size={20} color="#1976d2" />
           <Text style={timeSlotStyles.title}>Available Time Slots</Text>
         </View>
-        
+
         <View style={timeSlotStyles.legend}>
           <View style={timeSlotStyles.legendItem}>
             <View style={[timeSlotStyles.legendDot, timeSlotStyles.legendAvailable]} />
@@ -411,7 +421,7 @@ const TimeSlotPicker: React.FC<{
           </View>
         </View>
       </View>
-      
+
       <View style={timeSlotStyles.slotsContainer}>
         {rows.map((row, rowIndex) => (
           <View key={`row-${rowIndex}`} style={timeSlotStyles.row}>
@@ -539,7 +549,8 @@ const timeSlotStyles = StyleSheet.create({
   },
 });
 
-// Tạo component riêng cho SymptomsInput để tránh lỗi Hooks
+// ==================== SYMPTOMS INPUT ====================
+
 const SymptomsInput: React.FC<{
   symptoms: string;
   notes: string;
@@ -566,7 +577,7 @@ const SymptomsInput: React.FC<{
         <Ionicons name="medical-outline" size={24} color="#1976d2" />
         <Text style={symptomsStyles.sectionTitle}>Symptoms & Notes</Text>
       </View>
-      
+
       <View style={symptomsStyles.inputGroup}>
         <Text style={symptomsStyles.inputLabel}>Describe Your Symptoms *</Text>
         <TextInput
@@ -702,11 +713,58 @@ const symptomsStyles = StyleSheet.create({
   },
 });
 
-// Component chính BookingScreen
+// ==================== MAIN BOOKING SCREEN ====================
+
 const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
-  const { doctor } = route.params as { doctor: Doctor };
-  
-  // States - tất cả hooks phải được gọi ở đây
+
+  // ── Defensive params parsing ──────────────────────────────────────────────
+  // Supports two shapes:
+  //   1. { doctor: Doctor }            ← direct navigation with full object
+  //   2. { doctorId, initialData }     ← from ChatWidget after AI booking
+  const params = (route.params ?? {}) as {
+    doctor?: Doctor;
+    doctorId?: string;
+    initialData?: any;
+    appointmentId?: string;
+  };
+
+  const doctor: Doctor | null =
+    params.doctor ??
+    (params.initialData || params.doctorId
+      ? {
+          _id: params.doctorId ?? params.initialData?.doctor_id ?? '',
+          name:
+            params.initialData?.doctor_name ??
+            params.initialData?.doctorName ??
+            'Unknown Doctor',
+          email: '',
+          specialty: params.initialData?.specialty ?? '',
+          consultation_fee: params.initialData?.consultation_fee,
+          rating: params.initialData?.doctor?.rating,
+          years_of_experience: params.initialData?.doctor?.years_of_experience,
+        }
+      : null);
+
+  // Guard: render fallback if no doctor data at all
+  if (!doctor) {
+    return (
+      <SafeAreaView style={styles.fallbackContainer}>
+        <Ionicons name="alert-circle-outline" size={72} color="#b0bec5" />
+        <Text style={styles.fallbackTitle}>Doctor information not found</Text>
+        <Text style={styles.fallbackSubtitle}>
+          Please go back and select a doctor to book an appointment.
+        </Text>
+        <TouchableOpacity
+          style={styles.fallbackButton}
+          onPress={() => navigation.goBack()}
+        >
+          <Text style={styles.fallbackButtonText}>Go Back</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
+    );
+  }
+  // ─────────────────────────────────────────────────────────────────────────
+
   const [selectedDate, setSelectedDate] = useState(() => {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -721,14 +779,13 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
   const [currentStep, setCurrentStep] = useState(1);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingSlots, setLoadingSlots] = useState(false);
-  
-  // Animations
+
   const fadeAnim = useState(new Animated.Value(0))[0];
   const slideAnim = useState(new Animated.Value(30))[0];
-  
+
   const timeSlots = [
     '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
-    '14:00', '14:30', '15:00', '15:30', '16:00', '16:30'
+    '14:00', '14:30', '15:00', '15:30', '16:00', '16:30',
   ];
 
   useEffect(() => {
@@ -744,16 +801,8 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
 
   const animateScreen = () => {
     Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 400,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 400,
-        useNativeDriver: true,
-      }),
+      Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 400, useNativeDriver: true }),
     ]).start();
   };
 
@@ -762,34 +811,30 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
     try {
       const token = await AsyncStorage.getItem('authToken');
       const formattedDate = selectedDate.toISOString().split('T')[0];
-      
+
       const response = await fetch(
         `${API_BASE_URL}/api/patient/appointments/availability?doctor_id=${doctor._id}&date=${formattedDate}`,
         {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
+          headers: { Authorization: `Bearer ${token}` },
         }
       );
 
       if (response.ok) {
         const data = await response.json();
-        
+
         const slots = timeSlots.map(time => {
-          const slotData = data.availableSlots?.find((slot: any) => slot.time === time);
-          const isBooked = slotData && !slotData.isAvailable;
-          
+          const slotData = data.availableSlots?.find((s: any) => s.time === time);
           return {
             time,
             isAvailable: slotData ? slotData.isAvailable : true,
             isReserved: slotData ? slotData.isReserved : false,
-            isBooked: isBooked,
+            isBooked: slotData ? !slotData.isAvailable : false,
             bookedInfo: slotData?.bookedInfo || null,
           };
         });
-        
+
         setAvailableSlots(slots);
-        
+
         if (data.summary?.isFullyBooked) {
           Alert.alert(
             'Fully Booked',
@@ -821,7 +866,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     fetchAvailableSlots();
-  }, []);
+  }, [selectedDate]);
 
   const handleDateChange = (event: any, date?: Date) => {
     if (Platform.OS === 'android') {
@@ -832,15 +877,12 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
       today.setHours(0, 0, 0, 0);
       const selected = new Date(date);
       selected.setHours(0, 0, 0, 0);
-      
+
       if (selected <= today) {
-        Alert.alert(
-          'Invalid Date',
-          'Please select a date starting from tomorrow.'
-        );
+        Alert.alert('Invalid Date', 'Please select a date starting from tomorrow.');
         return;
       }
-      
+
       setSelectedDate(date);
       setSelectedTime('');
     }
@@ -859,17 +901,26 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
 
     const selectedSlot = availableSlots.find(slot => slot.time === selectedTime);
     if (selectedSlot?.isReserved || selectedSlot?.isBooked) {
-      Alert.alert('Slot Unavailable', 'This time slot is no longer available. Please choose a different time.');
+      Alert.alert(
+        'Slot Unavailable',
+        'This time slot is no longer available. Please choose a different time.'
+      );
       return false;
     }
 
     if (!selectedSlot?.isAvailable) {
-      Alert.alert('Slot Unavailable', 'This time slot is not available. Please choose a different time.');
+      Alert.alert(
+        'Slot Unavailable',
+        'This time slot is not available. Please choose a different time.'
+      );
       return false;
     }
 
-    if (symptoms.length < 5 && symptoms.length > 0) {
-      Alert.alert('Symptoms Description', 'Please provide a more detailed description of your symptoms (minimum 5 characters)');
+    if (symptoms.length > 0 && symptoms.length < 5) {
+      Alert.alert(
+        'Symptoms Description',
+        'Please provide a more detailed description of your symptoms (minimum 5 characters)'
+      );
       return false;
     }
 
@@ -877,7 +928,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
     today.setHours(0, 0, 0, 0);
     const selected = new Date(selectedDate);
     selected.setHours(0, 0, 0, 0);
-    
+
     if (selected <= today) {
       Alert.alert('Invalid Date', 'Appointments can only be booked for tomorrow onwards.');
       return false;
@@ -894,11 +945,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
       `Are you sure you want to book this appointment?\n\n• Dr. ${doctor.user_id?.name || doctor.name}\n• ${selectedDate.toDateString()} at ${selectedTime}\n• Fee: $${doctor.consultation_fee || '150'}`,
       [
         { text: 'Edit', style: 'cancel' },
-        { 
-          text: 'Confirm', 
-          onPress: submitBooking,
-          style: 'default'
-        }
+        { text: 'Confirm', onPress: submitBooking, style: 'default' },
       ]
     );
   };
@@ -908,7 +955,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
     try {
       const token = await AsyncStorage.getItem('authToken');
       const userDataString = await AsyncStorage.getItem('userData');
-      
+
       let user_id = null;
       if (userDataString) {
         const userData = JSON.parse(userDataString);
@@ -925,7 +972,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
       today.setHours(0, 0, 0, 0);
       const selected = new Date(selectedDate);
       selected.setHours(0, 0, 0, 0);
-      
+
       if (selected <= today) {
         Alert.alert('Invalid Date', 'Appointments can only be booked for tomorrow onwards.');
         setIsLoading(false);
@@ -936,30 +983,25 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           doctor_id: doctor._id,
-          user_id: user_id,
+          user_id,
           specialty_id: doctor.specialty_id,
           appointment_date: selectedDate.toISOString().split('T')[0],
           time_slot: selectedTime,
           reason: symptoms || 'General consultation',
-          notes: notes,
-          status: 'pending'
-        })
+          notes,
+          status: 'pending',
+        }),
       });
 
-      if (response.ok) {        
+      if (response.ok) {
         Alert.alert(
           'Booking Confirmed! 🎉',
           `Your appointment has been confirmed.\n\nA confirmation has been sent to your email.`,
-          [
-            {
-              text: 'Done',
-              onPress: () => navigation.navigate('Home')
-            }
-          ]
+          [{ text: 'Done', onPress: () => navigation.navigate('Home') }]
         );
       } else {
         const errorText = await response.text();
@@ -970,7 +1012,6 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
         } catch (e) {
           console.error('Error parsing response:', e);
         }
-        
         throw new Error(errorMessage);
       }
     } catch (error) {
@@ -983,39 +1024,35 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
     }
   };
 
+  // ==================== RENDER STEPS ====================
+
   const renderDatePickerSection = () => {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
-    
+
     return (
-      <Animated.View 
-        style={[
-          styles.section,
-          {
-            opacity: fadeAnim,
-            transform: [{ translateY: slideAnim }]
-          }
-        ]}
+      <Animated.View
+        style={[styles.section, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}
       >
         <View style={styles.sectionHeader}>
           <Ionicons name="calendar-outline" size={24} color="#1976d2" />
           <Text style={styles.sectionTitle}>Select Date & Time</Text>
         </View>
-        
+
         <View style={styles.dateContainer}>
           <Text style={styles.dateLabel}>Appointment Date</Text>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.datePickerButton}
             onPress={() => setShowDatePicker(true)}
             activeOpacity={0.7}
           >
             <Ionicons name="calendar" size={20} color="#1976d2" />
             <Text style={styles.dateText}>
-              {selectedDate.toLocaleDateString('en-US', { 
+              {selectedDate.toLocaleDateString('en-US', {
                 weekday: 'long',
                 year: 'numeric',
                 month: 'long',
-                day: 'numeric'
+                day: 'numeric',
               })}
             </Text>
             <Ionicons name="chevron-forward" size={16} color="#666" />
@@ -1041,15 +1078,12 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
         />
 
         <View style={styles.navigationButtons}>
-          <TouchableOpacity 
-            style={styles.backButton}
-            onPress={() => navigation.goBack()}
-          >
+          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
             <Ionicons name="arrow-back" size={18} color="#1976d2" />
             <Text style={styles.backButtonText}>Cancel</Text>
           </TouchableOpacity>
-          
-          <TouchableOpacity 
+
+          <TouchableOpacity
             style={[styles.nextButton, !selectedTime && styles.nextButtonDisabled]}
             onPress={() => setCurrentStep(2)}
             disabled={!selectedTime}
@@ -1062,46 +1096,35 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
     );
   };
 
-  const renderSymptomsSection = () => {
-    return (
-      <Animated.View 
-        style={[
-          styles.section,
-          {
-            opacity: fadeAnim,
-            transform: [{ translateY: slideAnim }]
-          }
-        ]}
-      >
-        <SymptomsInput
-          symptoms={symptoms}
-          notes={notes}
-          onSymptomsChange={setSymptoms}
-          onNotesChange={setNotes}
-          onAddSymptom={handleAddSymptom}
-        />
+  const renderSymptomsSection = () => (
+    <Animated.View
+      style={[styles.section, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}
+    >
+      <SymptomsInput
+        symptoms={symptoms}
+        notes={notes}
+        onSymptomsChange={setSymptoms}
+        onNotesChange={setNotes}
+        onAddSymptom={handleAddSymptom}
+      />
 
-        <View style={styles.navigationButtons}>
-          <TouchableOpacity 
-            style={styles.backButton}
-            onPress={() => setCurrentStep(1)}
-          >
-            <Ionicons name="arrow-back" size={18} color="#1976d2" />
-            <Text style={styles.backButtonText}>Back</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.nextButton, symptoms.length < 5 && styles.nextButtonDisabled]}
-            onPress={() => setCurrentStep(3)}
-            disabled={symptoms.length < 5}
-          >
-            <Text style={styles.nextButtonText}>Review</Text>
-            <Ionicons name="arrow-forward" size={18} color="white" />
-          </TouchableOpacity>
-        </View>
-      </Animated.View>
-    );
-  };
+      <View style={styles.navigationButtons}>
+        <TouchableOpacity style={styles.backButton} onPress={() => setCurrentStep(1)}>
+          <Ionicons name="arrow-back" size={18} color="#1976d2" />
+          <Text style={styles.backButtonText}>Back</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.nextButton, symptoms.length < 5 && styles.nextButtonDisabled]}
+          onPress={() => setCurrentStep(3)}
+          disabled={symptoms.length < 5}
+        >
+          <Text style={styles.nextButtonText}>Review</Text>
+          <Ionicons name="arrow-forward" size={18} color="white" />
+        </TouchableOpacity>
+      </View>
+    </Animated.View>
+  );
 
   const renderConfirmationSection = () => {
     const today = new Date();
@@ -1109,23 +1132,19 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
     const selected = new Date(selectedDate);
     selected.setHours(0, 0, 0, 0);
     const isDateValid = selected > today;
-    
+
     return (
-      <Animated.View 
-        style={[
-          styles.section,
-          {
-            opacity: fadeAnim,
-            transform: [{ translateY: slideAnim }]
-          }
-        ]}
+      <Animated.View
+        style={[styles.section, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}
       >
         <View style={styles.confirmationHeader}>
           <View style={styles.confirmationIcon}>
             <Ionicons name="checkmark-circle" size={60} color="#4CAF50" />
           </View>
           <Text style={styles.confirmationTitle}>Review Your Booking</Text>
-          <Text style={styles.confirmationSubtitle}>Please verify all details before confirming</Text>
+          <Text style={styles.confirmationSubtitle}>
+            Please verify all details before confirming
+          </Text>
         </View>
 
         {!isDateValid && (
@@ -1140,24 +1159,28 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
         <View style={styles.summaryCard}>
           <View style={styles.summarySection}>
             <Text style={styles.summarySectionTitle}>Appointment Details</Text>
-            
+
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Doctor</Text>
-              <Text style={styles.summaryValue}>Dr. {doctor.user_id?.name || doctor.name}</Text>
+              <Text style={styles.summaryValue}>
+                Dr. {doctor.user_id?.name || doctor.name}
+              </Text>
             </View>
-            
+
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Specialty</Text>
-              <Text style={styles.summaryValue}>{doctor.specialty_id?.name || doctor.specialty}</Text>
+              <Text style={styles.summaryValue}>
+                {doctor.specialty_id?.name || doctor.specialty || 'General Practice'}
+              </Text>
             </View>
-            
+
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Date & Time</Text>
               <Text style={styles.summaryValue}>
                 {selectedDate.toLocaleDateString()} at {selectedTime}
               </Text>
             </View>
-            
+
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Consultation Fee</Text>
               <Text style={[styles.summaryValue, styles.feeText]}>
@@ -1168,15 +1191,13 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
 
           <View style={styles.summarySection}>
             <Text style={styles.summarySectionTitle}>Symptoms</Text>
-            <Text style={styles.symptomsSummary}>
-              {symptoms || 'General consultation'}
-            </Text>
-            {notes && (
+            <Text style={styles.symptomsSummary}>{symptoms || 'General consultation'}</Text>
+            {notes ? (
               <View style={styles.notesSummary}>
                 <Text style={styles.notesLabel}>Additional notes:</Text>
                 <Text style={styles.notesText}>{notes}</Text>
               </View>
-            )}
+            ) : null}
           </View>
         </View>
 
@@ -1186,18 +1207,15 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
         </View>
 
         <View style={styles.navigationButtons}>
-          <TouchableOpacity 
-            style={styles.backButton}
-            onPress={() => setCurrentStep(2)}
-          >
+          <TouchableOpacity style={styles.backButton} onPress={() => setCurrentStep(2)}>
             <Ionicons name="arrow-back" size={18} color="#1976d2" />
             <Text style={styles.backButtonText}>Edit</Text>
           </TouchableOpacity>
-          
-          <TouchableOpacity 
+
+          <TouchableOpacity
             style={[
-              styles.confirmButton, 
-              (isLoading || !isDateValid) && styles.confirmButtonDisabled
+              styles.confirmButton,
+              (isLoading || !isDateValid) && styles.confirmButtonDisabled,
             ]}
             onPress={showConfirmation}
             disabled={isLoading || !isDateValid}
@@ -1218,6 +1236,8 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
     );
   };
 
+  // ==================== MAIN RENDER ====================
+
   return (
     <SafeAreaView style={styles.container}>
       <LinearGradient
@@ -1227,7 +1247,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
         end={{ x: 1, y: 0 }}
       >
         <View style={styles.headerContent}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.backButtonHeader}
             onPress={() => navigation.goBack()}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -1242,12 +1262,12 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
         </View>
       </LinearGradient>
 
-      <ScrollView 
+      <ScrollView
         style={styles.content}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl 
-            refreshing={refreshing} 
+          <RefreshControl
+            refreshing={refreshing}
             onRefresh={onRefresh}
             colors={['#1976d2']}
             tintColor="#1976d2"
@@ -1256,22 +1276,60 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
       >
         <DoctorCard doctor={doctor} />
         <StepIndicator currentStep={currentStep} />
-        
+
         {currentStep === 1 && renderDatePickerSection()}
         {currentStep === 2 && renderSymptomsSection()}
         {currentStep === 3 && renderConfirmationSection()}
-        
+
         <View style={styles.spacer} />
       </ScrollView>
     </SafeAreaView>
   );
 };
 
+// ==================== STYLES ====================
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f8f9fa',
   },
+
+  // Fallback screen styles
+  fallbackContainer: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+  },
+  fallbackTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#333',
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  fallbackSubtitle: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 8,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  fallbackButton: {
+    marginTop: 28,
+    backgroundColor: '#1976d2',
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  fallbackButtonText: {
+    color: 'white',
+    fontWeight: '600',
+    fontSize: 16,
+  },
+
   header: {
     paddingTop: Platform.OS === 'ios' ? 10 : 20,
     paddingBottom: 20,
