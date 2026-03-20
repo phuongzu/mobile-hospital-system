@@ -674,7 +674,7 @@ const HomeScreen = () => {
 
       {/* ── Filter tabs ─────────────────────────────────────────────────────── */}
       <View style={styles.filterTabs}>
-        {(['all', 'active', 'resolved'] as const).map(tab => (
+        {(['active', 'resolved','all'] as const).map(tab => (
           <TouchableOpacity
             key={tab}
             style={[styles.filterTab, filter === tab && styles.filterTabActive]}
