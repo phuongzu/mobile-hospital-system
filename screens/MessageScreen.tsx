@@ -143,6 +143,8 @@ interface Message {
   deleted?: boolean;
   deleted_at?: string;
   deleted_by?: string;
+  deleted_for?: string[];
+  deleted_for_me?: boolean;
   reactions?: Reaction[];
   reactions_count?: number;
   clientTempId?: string;
@@ -603,7 +605,6 @@ const PendingImagesPreview = memo(({ uris, onRemove, onSendAll }: {
 });
 
 // ==================== DOCTOR SEARCH MODAL ====================
-// Extracted as a standalone component so it is NEVER rendered inside renderMessage
 const DoctorSearchModal = memo(({ visible, onClose, onStartChat }: {
   visible: boolean;
   onClose: () => void;
@@ -620,7 +621,6 @@ const DoctorSearchModal = memo(({ visible, onClose, onStartChat }: {
       Animated.spring(slideY, { toValue: 0, tension: 65, friction: 8, useNativeDriver: true }).start();
     } else {
       Animated.timing(slideY, { toValue: height, duration: 240, useNativeDriver: true }).start();
-      // Reset state after close animation
       setTimeout(() => { setPhone(''); setFound(null); setError(''); }, 260);
     }
   }, [visible]);
@@ -659,8 +659,6 @@ const DoctorSearchModal = memo(({ visible, onClose, onStartChat }: {
           <TouchableWithoutFeedback>
             <Animated.View style={[styles.doctorSearchSheet, { transform: [{ translateY: slideY }] }]}>
               <View style={styles.sheetHandle} />
-
-              {/* Header */}
               <View style={styles.doctorSearchHeader}>
                 <View>
                   <Text style={styles.doctorSearchTitle}>Find a Doctor</Text>
@@ -671,8 +669,6 @@ const DoctorSearchModal = memo(({ visible, onClose, onStartChat }: {
                   <X size={20} color={COLORS.textSecondary} />
                 </TouchableOpacity>
               </View>
-
-              {/* Input */}
               <View style={styles.doctorSearchInputWrap}>
                 <Ionicons name="call-outline" size={20} color={COLORS.textMuted} />
                 <TextInput
@@ -692,16 +688,12 @@ const DoctorSearchModal = memo(({ visible, onClose, onStartChat }: {
                   </TouchableOpacity>
                 )}
               </View>
-
-              {/* Error */}
               {!!error && (
                 <View style={styles.doctorSearchError}>
                   <Ionicons name="alert-circle" size={18} color={COLORS.error} />
                   <Text style={styles.doctorSearchErrorText}>{error}</Text>
                 </View>
               )}
-
-              {/* Found card */}
               {found && (
                 <View style={styles.doctorFoundCard}>
                   <Image source={{ uri: buildAvatarUrl(found) }} style={styles.doctorFoundAvatar} />
@@ -716,8 +708,6 @@ const DoctorSearchModal = memo(({ visible, onClose, onStartChat }: {
                   <Ionicons name="checkmark-circle" size={24} color={COLORS.success} />
                 </View>
               )}
-
-              {/* Buttons */}
               {!found ? (
                 <TouchableOpacity
                   style={[styles.doctorSearchBtn, (!phone.trim() || searching) && { opacity: 0.5 }]}
@@ -755,8 +745,8 @@ const MessageScreen = () => {
   const flatListRef = useRef<FlatList>(null);
   const socketRef = useRef<Socket | null>(null);
   const selectedConvRef = useRef<Conversation | null>(null);
-  const handlerRef = useRef<((msg: any) => void) | null>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const deletingMessagesRef = useRef<Set<string>>(new Set());
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
@@ -774,8 +764,6 @@ const MessageScreen = () => {
   const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
   const [lastSeen, setLastSeen] = useState<Record<string, string>>({});
   const [searchQuery, setSearchQuery] = useState('');
-  const [registeredConversations, setRegisteredConversations] = useState<Set<string>>(new Set());
-
 
   // Pending images
   const [pendingImages, setPendingImages] = useState<{ uri: string; name: string; mime: string }[]>([]);
@@ -790,8 +778,6 @@ const MessageScreen = () => {
   const [showEmoji, setShowEmoji] = useState(false);
   const [showReactions, setShowReactions] = useState(false);
   const [messageReactions, setMessageReactions] = useState<GroupedReaction[]>([]);
-
-  // ── Doctor search — lives on the CONVERSATION LIST screen ──
   const [showDoctorSearch, setShowDoctorSearch] = useState(false);
 
   const [toast, setToast] = useState({ visible: false, message: '', type: 'success' as 'success' | 'error' | 'info' });
@@ -839,8 +825,9 @@ const MessageScreen = () => {
     } else emitTyping(false);
   };
 
-  // Socket handler
-  handlerRef.current = (rawMsg: any) => {
+  // ==================== SOCKET HANDLERS ====================
+
+  const handleNewMessage = useCallback((rawMsg: any) => {
     if (!rawMsg) return;
     const msg: Message = {
       _id: rawMsg._id || rawMsg.message?._id,
@@ -862,16 +849,28 @@ const MessageScreen = () => {
       edited: rawMsg.edited || rawMsg.message?.edited || false,
       edited_at: rawMsg.edited_at || rawMsg.message?.edited_at,
       deleted: rawMsg.deleted || rawMsg.message?.deleted || false,
+      deleted_for: rawMsg.deleted_for || rawMsg.message?.deleted_for,
       deleted_at: rawMsg.deleted_at || rawMsg.message?.deleted_at,
       reactions: rawMsg.reactions || rawMsg.message?.reactions || [],
       reactions_count: rawMsg.reactions_count || rawMsg.message?.reactions_count || 0,
     };
+
     const convId = msg.conversation_id;
     const active = selectedConvRef.current;
-    setConversations(prev => [...prev.map(c => c._id === convId
-      ? { ...c, last_message: msg, last_message_at: msg.timestamp || msg.createdAt, unread_count: active?._id === convId ? 0 : (c.unread_count || 0) + 1 }
-      : c
-    )].sort((a, b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime()));
+
+    // Update conversations list
+    setConversations(prev => {
+      const existing = prev.find(c => c._id === convId);
+      if (existing) {
+        return prev.map(c => c._id === convId
+          ? { ...c, last_message: msg, last_message_at: msg.timestamp || msg.createdAt, unread_count: active?._id === convId ? 0 : (c.unread_count || 0) + 1 }
+          : c
+        ).sort((a, b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime());
+      }
+      return prev;
+    });
+
+    // Update messages if active conversation
     if (active?._id === convId) {
       setMessages(prev => {
         if (prev.some(m => m._id === msg._id)) return prev;
@@ -885,56 +884,185 @@ const MessageScreen = () => {
         socketRef.current.emit('mark_as_read', { conversationId: convId });
       setTimeout(() => scrollToBottom(), 150);
     }
-  };
+  }, [isMe, scrollToBottom]);
+
+  const handleMessageDeleted = useCallback((data: any) => {
+    console.log('📱 Received message_deleted event:', data);
+
+    const msgId = data.messageId || data.message?._id;
+    if (!msgId) return;
+
+    const convId = data.conversationId || data.message?.conversation_id;
+
+    // Only process if this is the active conversation
+    if (convId !== selectedConvRef.current?._id) return;
+
+    if (data.type === 'everyone') {
+      // Update message to deleted state - KEEP the message object
+      setMessages(prev => prev.map(msg => {
+        if (msg._id !== msgId) return msg;
+        return {
+          ...msg,
+          deleted: true,
+          message: 'Message deleted',
+          message_type: 'text',
+          reactions: [],
+          media_url: undefined,
+          media_name: undefined,
+        };
+      }));
+    } else if (data.type === 'me') {
+      // Mark as deleted for me only
+      setMessages(prev => prev.map(msg => {
+        if (msg._id !== msgId) return msg;
+        return {
+          ...msg,
+          deleted_for_me: true,
+          message: 'This message was deleted',
+          message_type: 'text',
+          reactions: [],
+          media_url: undefined,
+        };
+      }));
+    }
+
+    // Update conversation preview if this was the last message
+    setConversations(prev => prev.map(conv => {
+      if (conv._id !== convId) return conv;
+      return {
+        ...conv,
+        last_message: {
+          ...conv.last_message,
+          _id: msgId,
+          message: 'Message deleted',
+          message_type: 'text',
+          deleted: data.type === 'everyone',
+          deleted_for_me: data.type === 'me',
+        } as Message,
+      };
+    }));
+  }, []);
+
+  const handleMessageEdited = useCallback((data: any) => {
+    if (data.conversationId === selectedConvRef.current?._id) {
+      setMessages(prev => prev.map(m => m._id === data.message._id ? data.message : m));
+    }
+  }, []);
+
+  const handleReactionAdded = useCallback((data: any) => {
+    if (data.conversationId === selectedConvRef.current?._id) {
+      setMessages(prev => prev.map(m =>
+        m._id === data.messageId
+          ? { ...m, reactions: data.message?.reactions || data.reactions, reactions_count: data.message?.reactions?.length || 0 }
+          : m
+      ));
+    }
+  }, []);
+
+  const handleReactionRemoved = useCallback((data: any) => {
+    if (data.conversationId === selectedConvRef.current?._id) {
+      setMessages(prev => prev.map(m =>
+        m._id === data.messageId
+          ? { ...m, reactions: data.message?.reactions || data.reactions, reactions_count: data.message?.reactions?.length || 0 }
+          : m
+      ));
+    }
+  }, []);
+
+  const handleTypingStart = useCallback((data: any) => {
+    if (data.conversationId === selectedConvRef.current?._id && data.userId !== currentUserId) {
+      setTypingUsers(prev => [...new Set([...prev, data.userId])]);
+    }
+  }, [currentUserId]);
+
+  const handleTypingStop = useCallback((data: any) => {
+    if (data.conversationId === selectedConvRef.current?._id) {
+      setTypingUsers(prev => prev.filter(id => id !== data.userId));
+    }
+  }, []);
+
+  const handleMessagesRead = useCallback((data: any) => {
+    if (data.conversationId === selectedConvRef.current?._id) {
+      setMessages(prev => prev.map(m => ({ ...m, read: m.sender_id?._id === currentUserId ? true : m.read })));
+    }
+  }, [currentUserId]);
 
   const connectSocket = async (userId: string) => {
     const token = await AsyncStorage.getItem('authToken');
     if (!token || socketRef.current?.connected) return;
-    socketRef.current = io(API_BASE_URL, { auth: { token, userId }, transports: ['websocket'], reconnection: true });
-    socketRef.current.on('connect', () => setIsSocketConnected(true));
-    socketRef.current.on('disconnect', () => setIsSocketConnected(false));
-    socketRef.current.on('new_message', d => handlerRef.current?.(d));
-    socketRef.current.on('receive_message', d => handlerRef.current?.(d.message || d));
-    socketRef.current.on('message_sent', d => {
-      if (d.success) { handlerRef.current?.(d.message || d.data?.message); setSending(false); }
-      else { setSending(false); showToast('Failed to send', 'error'); }
+
+    if (socketRef.current) {
+      socketRef.current.removeAllListeners();
+      socketRef.current.disconnect();
+    }
+
+    socketRef.current = io(API_BASE_URL, {
+      auth: { token, userId },
+      transports: ['websocket'],
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
     });
-    socketRef.current.on('message_edited', d => {
-      if (d.conversationId === selectedConvRef.current?._id)
-        setMessages(p => p.map(m => m._id === d.message._id ? d.message : m));
-    });
-    socketRef.current.on('message_deleted', d => {
-      if (d.conversationId === selectedConvRef.current?._id) {
-        if (d.type === 'everyone') setMessages(p => p.map(m => m._id === d.message._id ? d.message : m));
-        else setMessages(p => p.filter(m => m._id !== d.message._id));
+
+    socketRef.current.on('connect', () => {
+      console.log('✅ Mobile socket connected');
+      setIsSocketConnected(true);
+      if (selectedConvRef.current) {
+        socketRef.current?.emit('join_conversation', selectedConvRef.current._id);
+        console.log('📱 Joined room after connect:', selectedConvRef.current._id);
       }
     });
-    socketRef.current.on('reaction_added', d => {
-      if (d.conversationId === selectedConvRef.current?._id)
-        setMessages(p => p.map(m => m._id === d.messageId ? { ...m, reactions: d.reactions || [], reactions_count: d.reactions?.length || 0 } : m));
+
+    socketRef.current.on('disconnect', () => {
+      console.log('❌ Mobile socket disconnected');
+      setIsSocketConnected(false);
     });
-    socketRef.current.on('reaction_removed', d => {
-      if (d.conversationId === selectedConvRef.current?._id)
-        setMessages(p => p.map(m => m._id === d.messageId ? { ...m, reactions: d.reactions || [], reactions_count: d.reactions?.length || 0 } : m));
+
+    socketRef.current.on('connect_error', (err) => {
+      console.error('❌ Socket connection error:', err.message);
+      setIsSocketConnected(false);
     });
-    socketRef.current.on('typing_start', d => {
-      if (d.conversationId === selectedConvRef.current?._id && d.userId !== currentUserId)
-        setTypingUsers(p => [...new Set([...p, d.userId])]);
+
+    socketRef.current.on('receive_message', d => handleNewMessage(d.message || d));
+    socketRef.current.on('message_sent', d => {
+      if (d.success) {
+        handleNewMessage(d.message || d.data?.message);
+        setSending(false);
+      } else {
+        setSending(false);
+        showToast('Failed to send', 'error');
+      }
     });
-    socketRef.current.on('typing_stop', d => {
-      if (d.conversationId === selectedConvRef.current?._id)
-        setTypingUsers(p => p.filter(id => id !== d.userId));
-    });
-    socketRef.current.on('messages_read', d => {
-      if (d.conversationId === selectedConvRef.current?._id)
-        setMessages(p => p.map(m => ({ ...m, read: m.sender_id?._id === currentUserId ? true : m.read })));
-    });
-    socketRef.current.on('user_online', d => setOnlineUsers(p => new Set([...p, d.userId])));
+    socketRef.current.on('message_edited', handleMessageEdited);
+    socketRef.current.on('message_deleted', handleMessageDeleted);
+    socketRef.current.on('reaction_added', handleReactionAdded);
+    socketRef.current.on('reaction_removed', handleReactionRemoved);
+    socketRef.current.on('typing_start', handleTypingStart);
+    socketRef.current.on('typing_stop', handleTypingStop);
+    socketRef.current.on('messages_read', handleMessagesRead);
+    socketRef.current.on('user_online', d => setOnlineUsers(prev => new Set([...prev, d.userId])));
     socketRef.current.on('user_offline', d => {
-      setOnlineUsers(p => { const s = new Set(p); s.delete(d.userId); return s; });
-      if (d.lastSeen) setLastSeen(p => ({ ...p, [d.userId]: d.lastSeen }));
+      setOnlineUsers(prev => { const s = new Set(prev); s.delete(d.userId); return s; });
+      if (d.lastSeen) setLastSeen(prev => ({ ...prev, [d.userId]: d.lastSeen }));
     });
   };
+
+  // Join conversation when selected
+  useEffect(() => {
+    if (!selectedConversation) return;
+
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('join_conversation', selectedConversation._id);
+      console.log('📱 Joined conversation room:', selectedConversation._id);
+    }
+
+    return () => {
+      if (socketRef.current?.connected && selectedConversation) {
+        socketRef.current.emit('leave_conversation', selectedConversation._id);
+        console.log('📱 Left conversation room:', selectedConversation._id);
+      }
+    };
+  }, [selectedConversation]);
 
   const loadConversations = async () => {
     try {
@@ -966,7 +1094,6 @@ const MessageScreen = () => {
     finally { setMessageLoading(false); }
   };
 
-  // ── Start chat with a found doctor ──
   const startChatWithDoctor = async (doctor: User) => {
     try {
       const token = await AsyncStorage.getItem('authToken');
@@ -1016,7 +1143,7 @@ const MessageScreen = () => {
         const res = await axios.post(`${API_ENDPOINT}/messages/send`,
           { receiver_id: selectedConversation.participant._id, message: text, message_type: 'text', clientTempId: tempId },
           { headers: { Authorization: `Bearer ${token}` } });
-        if (res.data.success) handlerRef.current?.(res.data.data?.message || res.data.data);
+        if (res.data.success) handleNewMessage(res.data.data?.message || res.data.data);
       }
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch {
@@ -1037,22 +1164,68 @@ const MessageScreen = () => {
   };
 
   const deleteMessage = async (msg: Message, type: 'me' | 'everyone') => {
+    // Prevent double delete
+    if (deletingMessagesRef.current.has(msg._id)) return;
+    deletingMessagesRef.current.add(msg._id);
+
     Alert.alert('Delete Message', `Delete this message ${type === 'everyone' ? 'for everyone' : 'for you only'}?`, [
-      { text: 'Cancel', style: 'cancel' },
+      { text: 'Cancel', style: 'cancel', onPress: () => deletingMessagesRef.current.delete(msg._id) },
       {
         text: 'Delete', style: 'destructive', onPress: async () => {
           try {
-            const token = await AsyncStorage.getItem('authToken');
-            const res = await axios.delete(`${API_ENDPOINT}/messages/${msg._id}`, { headers: { Authorization: `Bearer ${token}` }, data: { type } });
-            if (res.data.success) {
-              if (type === 'everyone') setMessages(p => p.map(m => m._id === msg._id ? { ...m, ...res.data.data } : m));
-              else setMessages(p => p.filter(m => m._id !== msg._id));
-              showToast('Deleted', 'success');
+            // Optimistic update
+            if (type === 'everyone') {
+              setMessages(prev => prev.map(m =>
+                m._id === msg._id
+                  ? { ...m, deleted: true, message: 'Message deleted', message_type: 'text', reactions: [] }
+                  : m
+              ));
+            } else {
+              setMessages(prev => prev.map(m =>
+                m._id === msg._id
+                  ? { ...m, deleted_for_me: true, message: 'This message was deleted', message_type: 'text', reactions: [] }
+                  : m
+              ));
             }
-          } catch { showToast('Failed to delete', 'error'); }
+
+            const token = await AsyncStorage.getItem('authToken');
+
+            // Try socket first
+            if (socketRef.current?.connected) {
+              socketRef.current.emit('delete_message', {
+                messageId: msg._id,
+                conversationId: selectedConversation?._id,
+                type,
+              }, (response: any) => {
+                if (!response?.success) {
+                  console.error('Socket delete failed:', response?.error);
+                  // Fallback to REST
+                  deleteViaRest(msg, type, token);
+                }
+              });
+            } else {
+              await deleteViaRest(msg, type, token);
+            }
+
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          } catch (error) {
+            console.error('Delete failed:', error);
+            showToast('Failed to delete', 'error');
+            // Reload messages to sync
+            if (selectedConversation) loadMessages(selectedConversation._id);
+          } finally {
+            deletingMessagesRef.current.delete(msg._id);
+          }
         }
       }
     ]);
+  };
+
+  const deleteViaRest = async (msg: Message, type: 'me' | 'everyone', token: string | null) => {
+    const res = await axios.delete(`${API_ENDPOINT}/messages/${msg._id}`,
+      { headers: { Authorization: `Bearer ${token}` }, data: { type } }
+    );
+    if (!res.data.success) throw new Error('REST delete failed');
   };
 
   const addReaction = async (msgId: string, emoji: string) => {
@@ -1098,7 +1271,7 @@ const MessageScreen = () => {
         fd.append('message_type', 'image');
         fd.append('file', { uri: img.uri, name: img.name, type: img.mime } as any);
         const res = await axios.post(`${API_ENDPOINT}/messages/send-with-media`, fd, { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' } });
-        if (res.data.success) { handlerRef.current?.(res.data.data); setTimeout(() => scrollToBottom(), 100); }
+        if (res.data.success) { handleNewMessage(res.data.data); setTimeout(() => scrollToBottom(), 100); }
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       if (toSend.length > 1) showToast(`${toSend.length} photos sent`, 'success');
@@ -1177,23 +1350,33 @@ const MessageScreen = () => {
       } catch (e) { console.error(e); }
     };
     init();
-    return () => { socketRef.current?.disconnect(); if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current); };
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.removeAllListeners();
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      deletingMessagesRef.current.clear();
+    };
   }, []);
 
-  // ── Filtered conversations based on search ──
   const filteredConversations = conversations.filter(c => {
     if (!searchQuery.trim()) return true;
     return c.participant.name.toLowerCase().includes(searchQuery.toLowerCase());
   });
 
-  // ── RENDER MESSAGE CONTENT ──
-  // NOTE: This function ONLY returns the content of the bubble.
-  // It must never include navigation headers, modals, or screen-level UI.
   const renderContent = (item: Message) => {
     if (item.deleted) return (
       <View style={styles.deletedRow}>
         <Ban size={13} color={COLORS.textMuted} />
         <Text style={styles.deletedText}>Message deleted</Text>
+      </View>
+    );
+    if (item.deleted_for_me) return (
+      <View style={styles.deletedRow}>
+        <Ban size={13} color={COLORS.textMuted} />
+        <Text style={styles.deletedText}>This message was deleted</Text>
       </View>
     );
     const me = isMe(item);
@@ -1230,9 +1413,6 @@ const MessageScreen = () => {
     );
   };
 
-  // ── RENDER MESSAGE ROW ──
-  // This function returns ONLY the message row JSX.
-  // Screen-level elements (headers, modals) must never be placed here.
   const renderMessage = ({ item, index }: { item: Message; index: number }) => {
     const me = isMe(item);
     const prev = messages[index - 1];
@@ -1242,7 +1422,7 @@ const MessageScreen = () => {
     const showAv = showAvatar(item, index);
     const rxns = item.reactions?.length ? groupReactions(item.reactions, currentUserId) : [];
     const hasRxn = rxns.length > 0;
-    const isImg = item.message_type === 'image' && !item.deleted;
+    const isImg = item.message_type === 'image' && !item.deleted && !item.deleted_for_me;
     const myTL = 20, myTR = firstInGroup ? 20 : 6, myBR = lastInGroup ? 6 : 6, myBL = 20;
     const thTL = firstInGroup ? 20 : 6, thTR = 20, thBL = lastInGroup ? 6 : 6, thBR = 20;
 
@@ -1253,7 +1433,6 @@ const MessageScreen = () => {
         firstInGroup && { marginTop: 12 },
         { marginBottom: hasRxn ? 26 : 3 },
       ]}>
-        {/* Avatar */}
         {!me && (
           <View style={styles.avatarSlot}>
             {showAv
@@ -1270,16 +1449,15 @@ const MessageScreen = () => {
               styles.bubble,
               isImg ? styles.bubbleImg : (me ? styles.bubbleMe : styles.bubbleThem),
               { borderTopLeftRadius: me ? myTL : thTL, borderTopRightRadius: me ? myTR : thTR, borderBottomRightRadius: me ? myBR : thBR, borderBottomLeftRadius: me ? myBL : thBL },
-              item.deleted && styles.bubbleDeleted,
+              (item.deleted || item.deleted_for_me) && styles.bubbleDeleted,
             ]}
           >
-            {me && !isImg && !item.deleted && (
+            {me && !isImg && !item.deleted && !item.deleted_for_me && (
               <LinearGradient colors={[COLORS.bubbleMe, COLORS.bubbleMeDark]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
             )}
             {renderContent(item)}
           </Pressable>
 
-          {/* Reactions */}
           {hasRxn && (
             <View style={[styles.rxnRow, me ? { justifyContent: 'flex-end' } : { justifyContent: 'flex-start' }]}>
               {rxns.map((r, i) => (
@@ -1288,14 +1466,12 @@ const MessageScreen = () => {
             </View>
           )}
 
-          {/* Timestamp */}
           <Text style={[styles.msgTime, me ? { textAlign: 'right' } : { textAlign: 'left' }]}>
             {formatTime(item.timestamp)}
           </Text>
         </View>
 
-        {/* Read receipt */}
-        {me && lastInGroup && !item.deleted && (
+        {me && lastInGroup && !item.deleted && !item.deleted_for_me && (
           <View style={styles.receiptSlot}>
             {item.read ? <CheckCheck size={14} color={COLORS.read} /> : <Check size={14} color={COLORS.sent} />}
           </View>
@@ -1304,7 +1480,7 @@ const MessageScreen = () => {
     );
   };
 
-  // ── CHAT SCREEN ──
+  // Chat Screen
   if (selectedConversation) {
     const pOnline = onlineUsers.has(selectedConversation.participant._id);
     const pLastSeen = lastSeen[selectedConversation.participant._id];
@@ -1330,7 +1506,6 @@ const MessageScreen = () => {
         <EmojiPicker visible={showEmoji} onClose={() => setShowEmoji(false)} onSelect={onEmojiSelect} />
         <ReactionsView visible={showReactions} reactions={messageReactions} onClose={() => setShowReactions(false)} />
 
-        {/* ── Chat Header ── */}
         <View style={styles.chatHeader}>
           <TouchableOpacity
             onPress={() => { setSelectedConversation(null); setMessages([]); emitTyping(false); setPendingImages([]); }}
@@ -1362,7 +1537,6 @@ const MessageScreen = () => {
           </View>
         </View>
 
-        {/* ── Messages ── */}
         <View style={styles.chatBg}>
           {messageLoading
             ? <View style={styles.center}><ActivityIndicator size="large" color={COLORS.primary} /></View>
@@ -1386,7 +1560,6 @@ const MessageScreen = () => {
           }
         </View>
 
-        {/* Pending images */}
         {pendingImages.length > 0 && (
           <PendingImagesPreview
             uris={pendingImages.map(i => i.uri)}
@@ -1395,7 +1568,6 @@ const MessageScreen = () => {
           />
         )}
 
-        {/* ── Input bar ── */}
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={90}>
           <View style={styles.inputBar}>
             {uploadingMedia ? (
@@ -1435,19 +1607,17 @@ const MessageScreen = () => {
     );
   }
 
-  // ── CONVERSATIONS LIST SCREEN ──
+  // Conversations List Screen
   return (
     <SafeAreaView style={styles.root}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
 
-      {/* ── Doctor search modal — rendered at screen level, outside any list ── */}
       <DoctorSearchModal
         visible={showDoctorSearch}
         onClose={() => setShowDoctorSearch(false)}
         onStartChat={startChatWithDoctor}
       />
 
-      {/* Header */}
       <View style={styles.listHeader}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
           <TouchableOpacity onPress={() => navigation.navigate('Home' as never)} style={styles.backIconBtn}>
@@ -1456,7 +1626,6 @@ const MessageScreen = () => {
           <Text style={styles.listTitle}>Messages</Text>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          {/* ── Find doctor button — only here in the conversation list ── */}
           <TouchableOpacity
             onPress={() => setShowDoctorSearch(true)}
             style={styles.addDoctorBtn}
@@ -1470,7 +1639,6 @@ const MessageScreen = () => {
         </View>
       </View>
 
-      {/* Search bar — filters existing conversations by name */}
       <View style={styles.searchWrap}>
         <Ionicons name="search" size={17} color={COLORS.textMuted} />
         <TextInput
@@ -1532,9 +1700,10 @@ const MessageScreen = () => {
                   <View style={styles.convBottom}>
                     <Text style={[styles.convPreview, item.unread_count > 0 && { color: COLORS.textPrimary, fontWeight: '600' }]} numberOfLines={1}>
                       {item.last_message?.deleted ? 'Message deleted'
-                        : item.last_message?.message_type === 'image' ? '📷 Photo'
-                          : item.last_message?.message_type === 'file' ? '📎 File'
-                            : item.last_message?.message || 'Start chatting'}
+                        : item.last_message?.deleted_for_me ? 'This message was deleted'
+                          : item.last_message?.message_type === 'image' ? '📷 Photo'
+                            : item.last_message?.message_type === 'file' ? '📎 File'
+                              : item.last_message?.message || 'Start chatting'}
                     </Text>
                     {item.unread_count > 0 && (
                       <View style={styles.unreadBadge}>
@@ -1568,7 +1737,6 @@ const styles = StyleSheet.create({
   toast: { position: 'absolute', bottom: 30, left: 18, right: 18, borderRadius: 16, paddingHorizontal: 18, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', gap: 10, zIndex: 9999, ...SHADOW.float },
   toastText: { color: '#FFF', fontSize: 14, fontWeight: '600', flex: 1 },
 
-  // List header
   listHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingTop: Platform.OS === 'ios' ? 6 : 16, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: COLORS.divider },
   listTitle: { fontSize: 26, fontWeight: '800', color: COLORS.textPrimary, letterSpacing: -0.5 },
   backIconBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: COLORS.bgSecondary, justifyContent: 'center', alignItems: 'center' },
@@ -1576,11 +1744,9 @@ const styles = StyleSheet.create({
   connDotInner: { width: 10, height: 10, borderRadius: 5 },
   addDoctorBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: COLORS.primaryLight, justifyContent: 'center', alignItems: 'center' },
 
-  // Search bar
   searchWrap: { flexDirection: 'row', alignItems: 'center', margin: 14, paddingHorizontal: 14, height: 44, backgroundColor: COLORS.bgInput, borderRadius: RADIUS.pill, gap: 8, borderWidth: 1, borderColor: COLORS.divider },
   searchInput: { flex: 1, fontSize: 15, color: COLORS.textPrimary },
 
-  // Conversation row
   convItem: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, paddingVertical: 12, backgroundColor: COLORS.bg, borderBottomWidth: 1, borderBottomColor: COLORS.divider },
   convAvatarWrap: { position: 'relative', marginRight: 14, flexShrink: 0 },
   convAvatar: { width: 52, height: 52, borderRadius: 26 },
@@ -1597,7 +1763,6 @@ const styles = StyleSheet.create({
   medBadgeText: { fontSize: 11, color: COLORS.primary, fontWeight: '700' },
   emptyList: { alignItems: 'center', paddingTop: 100, gap: 10 },
 
-  // Chat header
   chatHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: COLORS.divider, backgroundColor: COLORS.bg, ...SHADOW.bubble },
   backBtn: { padding: 6, marginRight: 2 },
   chatHeaderAvatar: { width: 40, height: 40, borderRadius: 20, marginRight: 10 },
@@ -1608,14 +1773,12 @@ const styles = StyleSheet.create({
   chatHeaderActions: { flexDirection: 'row', gap: 4 },
   headerActionBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.primaryLight, justifyContent: 'center', alignItems: 'center' },
 
-  // Chat body
   chatBg: { flex: 1, backgroundColor: COLORS.bgChat },
   msgListContent: { paddingHorizontal: 12, paddingTop: 12, paddingBottom: 8 },
   emptyChat: { flex: 1, justifyContent: 'center', alignItems: 'center', minHeight: 380, gap: 10 },
   emptyTitle: { fontSize: 17, fontWeight: '700', color: COLORS.textPrimary },
   emptySub: { fontSize: 14, color: COLORS.textSecondary },
 
-  // Message row
   msgRow: { flexDirection: 'row', alignItems: 'flex-end', marginBottom: 3 },
   msgRowMe: { justifyContent: 'flex-end' },
   msgRowThem: { justifyContent: 'flex-start' },
@@ -1625,7 +1788,6 @@ const styles = StyleSheet.create({
   msgWrap: { maxWidth: '74%' },
   msgTime: { fontSize: 10, color: COLORS.textMuted, marginTop: 3, paddingHorizontal: 2 },
 
-  // Bubble
   bubble: { overflow: 'hidden', paddingHorizontal: 14, paddingVertical: 10, ...SHADOW.bubble },
   bubbleMe: { backgroundColor: COLORS.bubbleMe },
   bubbleThem: { backgroundColor: COLORS.bubbleThem },
@@ -1716,7 +1878,6 @@ const styles = StyleSheet.create({
   reactionUserAvatar: { width: 28, height: 28, borderRadius: 14 },
   reactionUserName: { fontSize: 14, fontWeight: '600', color: COLORS.textPrimary },
 
-  // Doctor search sheet
   doctorSearchSheet: { backgroundColor: COLORS.bg, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingBottom: Platform.OS === 'ios' ? 40 : 28, width: '100%', ...SHADOW.float },
   doctorSearchHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 },
   doctorSearchTitle: { fontSize: 22, fontWeight: '800', color: COLORS.textPrimary, marginBottom: 4 },

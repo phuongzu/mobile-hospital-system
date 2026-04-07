@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ScrollView, 
-  Switch, 
-  TouchableOpacity, 
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Switch,
+  TouchableOpacity,
   Linking,
   Alert,
   Platform,
@@ -38,7 +38,7 @@ const SettingsScreen = () => {
     navigation.navigate('Profile');
   };
   const { isDarkMode, toggleDarkMode } = useContext(ThemeContext);
-  
+
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
@@ -70,9 +70,9 @@ const SettingsScreen = () => {
     try {
       const hasHardware = await LocalAuthentication.hasHardwareAsync();
       const isEnrolled = await LocalAuthentication.isEnrolledAsync();
-      
+
       setBiometricAvailable(hasHardware && isEnrolled);
-      
+
       if (hasHardware && isEnrolled) {
         const savedBiometric = await AsyncStorage.getItem('biometricEnabled');
         if (savedBiometric !== null) {
@@ -91,7 +91,7 @@ const SettingsScreen = () => {
         const parsedSettings = JSON.parse(settings);
         setNotificationsEnabled(parsedSettings.notificationsEnabled ?? true);
         setLanguage(parsedSettings.language || 'English');
-        
+
         const userData = await AsyncStorage.getItem('userData');
         if (userData) {
           const parsedUserData = JSON.parse(userData);
@@ -113,7 +113,7 @@ const SettingsScreen = () => {
           notificationsEnabled: true,
           language
         }));
-        
+
         await Notifications.scheduleNotificationAsync({
           content: {
             title: "Notifications Enabled",
@@ -143,7 +143,7 @@ const SettingsScreen = () => {
         const result = await LocalAuthentication.authenticateAsync({
           promptMessage: 'Authenticate to enable biometric login',
         });
-        
+
         if (result.success) {
           setBiometricEnabled(true);
           await AsyncStorage.setItem('biometricEnabled', JSON.stringify(true));
@@ -187,8 +187,8 @@ const SettingsScreen = () => {
       "Are you sure you want to log out?",
       [
         { text: "Cancel", style: "cancel" },
-        { 
-          text: "Log Out", 
+        {
+          text: "Log Out",
           style: "destructive",
           onPress: async () => {
             await AsyncStorage.multiRemove(['userToken', 'biometricEnabled']);
@@ -228,178 +228,178 @@ const SettingsScreen = () => {
     title: string;
     items: SettingsItem[];
   }[] = [
-    {
-      title: 'ACCOUNT',
-      items: [
-        {
-          id: 1,
-          title: 'Personal Information',
-          icon: 'person-circle-outline',
-          action: () => navigateToScreen('PersonalInfo'),
-          value: userName,
-        },
-        {
-          id: 2,
-          title: 'Change Password',
-          icon: 'key-outline',
-          action: () => navigateToScreen('ChangePassword'),
-        },
-        {
-          id: 3,
-          title: 'Payment Methods',
-          icon: 'wallet-outline',
-          action: () => navigateToScreen('PaymentMethods'),
-          value: '3 cards',
-        },
-      ],
-    },
-    {
-      title: 'PREFERENCES',
-      items: [
-        {
-          id: 4,
-          title: 'Notifications',
-          icon: 'notifications-outline',
-          action: () => {},
-          hasSwitch: true,
-          switchValue: notificationsEnabled,
-          onSwitchChange: handleNotificationToggle,
-        },
-        {
-          id: 5,
-          title: 'Dark Mode',
-          icon: 'moon-outline',
-          action: () => {},
-          hasSwitch: true,
-          switchValue: isDarkMode,
-          onSwitchChange: toggleDarkMode,
-        },
-        {
-          id: 6,
-          title: 'Language',
-          icon: 'globe-outline',
-          action: () => {
-            Alert.alert(
-              "Select Language",
-              "Choose your preferred language",
-              [
-                { text: "English", onPress: () => handleLanguageSelect('English') },
-                { text: "Spanish", onPress: () => handleLanguageSelect('Spanish') },
-                { text: "French", onPress: () => handleLanguageSelect('French') },
-                { text: "Cancel", style: "cancel" },
-              ]
-            );
+      {
+        title: 'ACCOUNT',
+        items: [
+          {
+            id: 1,
+            title: 'Personal Information',
+            icon: 'person-circle-outline',
+            action: () => navigateToScreen('PersonalInfo'),
+            value: userName,
           },
-          value: language,
-        },
-      ],
-    },
-    {
-      title: 'SECURITY',
-      items: [
-        {
-          id: 7,
-          title: Platform.OS === 'ios' ? 'Face ID' : 'Fingerprint',
-          icon: Platform.OS === 'ios' ? 'scan-outline' : 'finger-print-outline',
-          action: () => {},
-          hasSwitch: true,
-          switchValue: biometricEnabled,
-          onSwitchChange: handleBiometricToggle,
-          disabled: !biometricAvailable,
-        },
-        {
-          id: 8,
-          title: 'Two-Factor Auth',
-          icon: 'shield-checkmark-outline',
-          action: () => navigateToScreen('TwoFactorAuth'),
-          value: 'Inactive',
-        },
-      ],
-    },
-    {
-      title: 'SUPPORT',
-      items: [
-        {
-          id: 9,
-          title: 'Help Center',
-          icon: 'help-buoy-outline',
-          action: handleHelpCenter,
-        },
-        {
-          id: 10,
-          title: 'Contact Support',
-          icon: 'chatbubble-ellipses-outline',
-          action: handleContactUs,
-        },
-        {
-          id: 11,
-          title: 'Privacy Policy',
-          icon: 'document-lock-outline',
-          action: handlePrivacyPolicy,
-        },
-        {
-          id: 12,
-          title: 'Terms of Service',
-          icon: 'document-text-outline',
-          action: handleTermsOfService,
-        },
-      ],
-    },
-    {
-      title: 'ABOUT',
-      items: [
-        {
-          id: 13,
-          title: 'App Version',
-          icon: 'information-circle-outline',
-          action: () => {},
-          value: '1.2.4',
-        },
-        {
-          id: 14,
-          title: 'Rate App',
-          icon: 'star-outline',
-          action: () => {
-            Linking.openURL(Platform.OS === 'ios' 
-              ? 'itms-apps://itunes.apple.com/app/idYOUR_APP_ID' 
-              : 'market://details?id=com.healthapp'
-            );
+          {
+            id: 2,
+            title: 'Change Password',
+            icon: 'key-outline',
+            action: () => navigateToScreen('ChangePassword'),
           },
-        },
-        {
-          id: 15,
-          title: 'Log Out',
-          icon: 'log-out-outline',
-          action: handleLogout,
-          type: 'danger',
-        },
-      ],
-    },
-  ];
+          {
+            id: 3,
+            title: 'Payment Methods',
+            icon: 'wallet-outline',
+            action: () => navigateToScreen('PaymentMethods'),
+            value: '3 cards',
+          },
+        ],
+      },
+      {
+        title: 'PREFERENCES',
+        items: [
+          {
+            id: 4,
+            title: 'Notifications',
+            icon: 'notifications-outline',
+            action: () => { },
+            hasSwitch: true,
+            switchValue: notificationsEnabled,
+            onSwitchChange: handleNotificationToggle,
+          },
+          {
+            id: 5,
+            title: 'Dark Mode',
+            icon: 'moon-outline',
+            action: () => { },
+            hasSwitch: true,
+            switchValue: isDarkMode,
+            onSwitchChange: toggleDarkMode,
+          },
+          {
+            id: 6,
+            title: 'Language',
+            icon: 'globe-outline',
+            action: () => {
+              Alert.alert(
+                "Select Language",
+                "Choose your preferred language",
+                [
+                  { text: "English", onPress: () => handleLanguageSelect('English') },
+                  { text: "Spanish", onPress: () => handleLanguageSelect('Spanish') },
+                  { text: "French", onPress: () => handleLanguageSelect('French') },
+                  { text: "Cancel", style: "cancel" },
+                ]
+              );
+            },
+            value: language,
+          },
+        ],
+      },
+      {
+        title: 'SECURITY',
+        items: [
+          {
+            id: 7,
+            title: Platform.OS === 'ios' ? 'Face ID' : 'Fingerprint',
+            icon: Platform.OS === 'ios' ? 'scan-outline' : 'finger-print-outline',
+            action: () => { },
+            hasSwitch: true,
+            switchValue: biometricEnabled,
+            onSwitchChange: handleBiometricToggle,
+            disabled: !biometricAvailable,
+          },
+          {
+            id: 8,
+            title: 'Two-Factor Auth',
+            icon: 'shield-checkmark-outline',
+            action: () => navigateToScreen('TwoFactorAuth'),
+            value: 'Inactive',
+          },
+        ],
+      },
+      {
+        title: 'SUPPORT',
+        items: [
+          {
+            id: 9,
+            title: 'Help Center',
+            icon: 'help-buoy-outline',
+            action: handleHelpCenter,
+          },
+          {
+            id: 10,
+            title: 'Contact Support',
+            icon: 'chatbubble-ellipses-outline',
+            action: handleContactUs,
+          },
+          {
+            id: 11,
+            title: 'Privacy Policy',
+            icon: 'document-lock-outline',
+            action: handlePrivacyPolicy,
+          },
+          {
+            id: 12,
+            title: 'Terms of Service',
+            icon: 'document-text-outline',
+            action: handleTermsOfService,
+          },
+        ],
+      },
+      {
+        title: 'ABOUT',
+        items: [
+          {
+            id: 13,
+            title: 'App Version',
+            icon: 'information-circle-outline',
+            action: () => { },
+            value: '1.2.4',
+          },
+          {
+            id: 14,
+            title: 'Rate App',
+            icon: 'star-outline',
+            action: () => {
+              Linking.openURL(Platform.OS === 'ios'
+                ? 'itms-apps://itunes.apple.com/app/idYOUR_APP_ID'
+                : 'market://details?id=com.healthapp'
+              );
+            },
+          },
+          {
+            id: 15,
+            title: 'Log Out',
+            icon: 'log-out-outline',
+            action: handleLogout,
+            type: 'danger',
+          },
+        ],
+      },
+    ];
 
   return (
     <View style={[styles.container, isDarkMode && styles.containerDark]}>
       <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-      
+
       {/* Animated Header Background */}
-      <Animated.View 
+      <Animated.View
         style={[
           styles.headerBackground,
           { opacity: headerOpacity },
           isDarkMode && styles.headerBackgroundDark
-        ]} 
+        ]}
       />
 
       {/* Header with Back Button */}
       <View style={styles.header}>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <Ionicons 
-            name="chevron-back" 
-            size={28} 
-            color={isDarkMode ? '#fff' : '#333'} 
+          <Ionicons
+            name="chevron-back"
+            size={28}
+            color={isDarkMode ? '#fff' : '#333'}
           />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, isDarkMode && styles.headerTitleDark]}>
@@ -408,7 +408,7 @@ const SettingsScreen = () => {
         <View style={styles.headerRight} />
       </View>
 
-      <Animated.ScrollView 
+      <Animated.ScrollView
         style={styles.scrollView}
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
@@ -460,16 +460,16 @@ const SettingsScreen = () => {
                       item.type === 'danger' && styles.dangerIconContainer,
                       isDarkMode && styles.iconContainerDark
                     ]}>
-                      <Ionicons 
-                        name={item.icon as any} 
-                        size={20} 
+                      <Ionicons
+                        name={item.icon as any}
+                        size={20}
                         color={
-                          item.type === 'danger' ? '#ef4444' : 
-                          isDarkMode ? '#60a5fa' : '#3b82f6'
-                        } 
+                          item.type === 'danger' ? '#ef4444' :
+                            isDarkMode ? '#60a5fa' : '#3b82f6'
+                        }
                       />
                     </View>
-                    
+
                     <Text style={[
                       styles.settingText,
                       isDarkMode && styles.settingTextDark,
@@ -478,17 +478,17 @@ const SettingsScreen = () => {
                     ]}>
                       {item.title}
                     </Text>
-                    
+
                     <View style={styles.settingRight}>
                       {item.value && (
                         <Text style={[
-                          styles.settingValue, 
+                          styles.settingValue,
                           isDarkMode && styles.settingValueDark
                         ]}>
                           {item.value}
                         </Text>
                       )}
-                      
+
                       {item.hasSwitch ? (
                         <Switch
                           value={item.switchValue}
@@ -499,16 +499,16 @@ const SettingsScreen = () => {
                         />
                       ) : (
                         !item.value && (
-                          <Ionicons 
-                            name="chevron-forward" 
-                            size={20} 
-                            color={isDarkMode ? '#6b7280' : '#9ca3af'} 
+                          <Ionicons
+                            name="chevron-forward"
+                            size={20}
+                            color={isDarkMode ? '#6b7280' : '#9ca3af'}
                           />
                         )
                       )}
                     </View>
                   </TouchableOpacity>
-                  
+
                   {itemIndex < section.items.length - 1 && (
                     <View style={[
                       styles.separator,
@@ -520,7 +520,7 @@ const SettingsScreen = () => {
             </View>
           </View>
         ))}
-        
+
         {/* Footer */}
         <View style={styles.footer}>
           <Text style={[styles.footerText, isDarkMode && styles.footerTextDark]}>
