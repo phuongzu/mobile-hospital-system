@@ -764,6 +764,8 @@ const MessageScreen = () => {
   const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
   const [lastSeen, setLastSeen] = useState<Record<string, string>>({});
   const [searchQuery, setSearchQuery] = useState('');
+  const sendTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
 
   // Pending images
   const [pendingImages, setPendingImages] = useState<{ uri: string; name: string; mime: string }[]>([]);
@@ -827,8 +829,11 @@ const MessageScreen = () => {
 
   // ==================== SOCKET HANDLERS ====================
 
+
+
   const handleNewMessage = useCallback((rawMsg: any) => {
     if (!rawMsg) return;
+
     const msg: Message = {
       _id: rawMsg._id || rawMsg.message?._id,
       clientTempId: rawMsg.clientTempId,
@@ -838,19 +843,12 @@ const MessageScreen = () => {
       message: rawMsg.message?.message || rawMsg.message || rawMsg.content || '',
       message_type: rawMsg.message_type || rawMsg.message?.message_type || 'text',
       media_url: rawMsg.media_url || rawMsg.message?.media_url,
-      media_urls: rawMsg.media_urls || rawMsg.message?.media_urls,
-      media_name: rawMsg.media_name || rawMsg.message?.media_name,
-      media_size: rawMsg.media_size || rawMsg.message?.media_size,
-      media_mime: rawMsg.media_mime || rawMsg.message?.media_mime,
       read: rawMsg.read || rawMsg.message?.read || false,
       timestamp: rawMsg.timestamp || rawMsg.message?.timestamp || new Date().toISOString(),
       createdAt: rawMsg.createdAt || rawMsg.message?.createdAt || new Date().toISOString(),
       updatedAt: rawMsg.updatedAt || rawMsg.message?.updatedAt || new Date().toISOString(),
       edited: rawMsg.edited || rawMsg.message?.edited || false,
-      edited_at: rawMsg.edited_at || rawMsg.message?.edited_at,
       deleted: rawMsg.deleted || rawMsg.message?.deleted || false,
-      deleted_for: rawMsg.deleted_for || rawMsg.message?.deleted_for,
-      deleted_at: rawMsg.deleted_at || rawMsg.message?.deleted_at,
       reactions: rawMsg.reactions || rawMsg.message?.reactions || [],
       reactions_count: rawMsg.reactions_count || rawMsg.message?.reactions_count || 0,
     };
@@ -870,78 +868,277 @@ const MessageScreen = () => {
       return prev;
     });
 
-    // Update messages if active conversation
+    // ✅ [MOBILE FIX] Always reset sending state if this is our message (clientTempId matches)
+    const senderIdStr = (msg.sender_id?._id || msg.sender_id || '').toString();
+    const currentIdStr = currentUserId.toString();
+
+    if (msg.clientTempId && senderIdStr === currentIdStr) {
+      setSending(false);
+      if (sendTimeoutRef.current) {
+        clearTimeout(sendTimeoutRef.current);
+        sendTimeoutRef.current = null;
+      }
+    }
+
+    // ✅ Update messages list if this is the active conversation
     if (active?._id === convId) {
       setMessages(prev => {
-        if (prev.some(m => m._id === msg._id)) return prev;
-        if (isMe(msg)) {
-          const ti = prev.findIndex(m => m._id?.startsWith('temp_') && m.message === msg.message);
-          if (ti !== -1) { const u = [...prev]; u[ti] = msg; return u; }
+        // 1. Nếu có clientTempId → replace temp message
+        if (msg.clientTempId) {
+          const tempIndex = prev.findIndex(m => m.clientTempId === msg.clientTempId);
+          if (tempIndex !== -1) {
+            const updated = [...prev];
+            updated[tempIndex] = { ...msg, clientTempId: undefined, status: 'sent' };
+            return updated;
+          }
         }
+
+        // 2. Tránh duplicate theo _id thật
+        if (prev.some(m => m._id === msg._id)) {
+          return prev;
+        }
+
         return [...prev, msg];
       });
-      if (socketRef.current?.connected && !isMe(msg))
+
+      // Mark as read if not from me
+      if (socketRef.current?.connected && senderIdStr !== currentIdStr) {
         socketRef.current.emit('mark_as_read', { conversationId: convId });
+      }
+
       setTimeout(() => scrollToBottom(), 150);
     }
-  }, [isMe, scrollToBottom]);
+  }, [currentUserId, scrollToBottom]);
 
-  const handleMessageDeleted = useCallback((data: any) => {
-    console.log('📱 Received message_deleted event:', data);
+  // ✅ FIX 2: Send message function with proper temp handling
+  const sendTextMessage = async () => {
+    if (!newMessage.trim() || !selectedConversation || sending) return;
 
-    const msgId = data.messageId || data.message?._id;
-    if (!msgId) return;
+    const text = newMessage.trim();
+    const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-    const convId = data.conversationId || data.message?.conversation_id;
+    // Clear input ngay lập tức
+    setNewMessage('');
+    setSending(true);  // Set loading state
+    emitTyping(false);
 
-    // Only process if this is the active conversation
-    if (convId !== selectedConvRef.current?._id) return;
-
-    if (data.type === 'everyone') {
-      // Update message to deleted state - KEEP the message object
-      setMessages(prev => prev.map(msg => {
-        if (msg._id !== msgId) return msg;
-        return {
-          ...msg,
-          deleted: true,
-          message: 'Message deleted',
-          message_type: 'text',
-          reactions: [],
-          media_url: undefined,
-          media_name: undefined,
-        };
-      }));
-    } else if (data.type === 'me') {
-      // Mark as deleted for me only
-      setMessages(prev => prev.map(msg => {
-        if (msg._id !== msgId) return msg;
-        return {
-          ...msg,
-          deleted_for_me: true,
-          message: 'This message was deleted',
-          message_type: 'text',
-          reactions: [],
-          media_url: undefined,
-        };
-      }));
+    // Clear timeout cũ nếu có
+    if (sendTimeoutRef.current) {
+      clearTimeout(sendTimeoutRef.current);
+      sendTimeoutRef.current = null;
     }
 
-    // Update conversation preview if this was the last message
-    setConversations(prev => prev.map(conv => {
-      if (conv._id !== convId) return conv;
-      return {
-        ...conv,
-        last_message: {
-          ...conv.last_message,
-          _id: msgId,
-          message: 'Message deleted',
+    const tempMsg: Message = {
+      _id: tempId,
+      clientTempId: tempId,
+      conversation_id: selectedConversation._id,
+      sender_id: currentUser || { _id: currentUserId, name: 'You', role: 'patient' },
+      receiver_id: selectedConversation.participant,
+      message: text,
+      message_type: 'text',
+      read: false,
+      timestamp: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      status: 'sending',
+    };
+
+    setMessages(prev => [...prev, tempMsg]);
+    setTimeout(() => scrollToBottom(), 100);
+
+    // Set timeout để fallback nếu không nhận được phản hồi
+    sendTimeoutRef.current = setTimeout(() => {
+      console.log('⏰ Send timeout for tempId:', tempId);
+      setMessages(prev => prev.filter(m => m.clientTempId !== tempId));
+      setSending(false);
+      showToast('Message send timeout', 'error');
+      sendTimeoutRef.current = null;
+    }, 12000);
+
+    try {
+      const token = await AsyncStorage.getItem('authToken');
+      if (socketRef.current?.connected) {
+        // ✅ [MOBILE FIX] Use ACK callback for immediate button reset
+        socketRef.current.emit('send_message', {
+          conversationId: selectedConversation._id,
+          receiverId: selectedConversation.participant._id,
+          message: text,
+          messageType: 'text',
+          clientTempId: tempId,
+        }, (res: any) => {
+          if (res?.success) {
+            console.log('✅ Send ACK received, resolve bubble');
+            setMessages(prev => prev.map(m =>
+              (m.clientTempId === tempId || m._id === tempId)
+                ? { ...m, _id: res.messageId || res.data?._id, clientTempId: undefined, status: 'sent' }
+                : m
+            ));
+            setSending(false);
+            if (sendTimeoutRef.current) {
+              clearTimeout(sendTimeoutRef.current);
+              sendTimeoutRef.current = null;
+            }
+          } else {
+            console.warn('Socket ACK error, falling back to REST');
+            sendViaRest(tempId, text, token);
+          }
+        });
+      } else {
+        await sendViaRest(tempId, text, token);
+      }
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch (error) {
+      console.error('Send error:', error);
+      setMessages(prev => prev.filter(m => m.clientTempId !== tempId));
+      setSending(false);
+      showToast('Failed to send', 'error');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      if (sendTimeoutRef.current) {
+        clearTimeout(sendTimeoutRef.current);
+        sendTimeoutRef.current = null;
+      }
+    }
+  };
+
+  // ✅ Helper for Mobile REST fallback
+  const sendViaRest = async (tempId: string, text: string, token: string | null) => {
+    try {
+      const res = await axios.post(`${API_ENDPOINT}/messages/send`,
+        {
+          receiver_id: selectedConversation?.participant._id,
+          message: text,
           message_type: 'text',
-          deleted: data.type === 'everyone',
-          deleted_for_me: data.type === 'me',
-        } as Message,
-      };
-    }));
+          clientTempId: tempId
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (res.data.success) {
+        const savedMsg = res.data.data?.message || res.data.data;
+        setMessages(prev => prev.map(m =>
+          (m.clientTempId === tempId || m._id === tempId)
+            ? { ...savedMsg, clientTempId: undefined, status: 'sent' }
+            : m
+        ));
+        setSending(false);
+        if (sendTimeoutRef.current) {
+          clearTimeout(sendTimeoutRef.current);
+          sendTimeoutRef.current = null;
+        }
+      } else {
+        throw new Error('REST send failed');
+      }
+    } catch (err) {
+      setMessages(prev => prev.filter(m => m.clientTempId !== tempId));
+      setSending(false);
+      if (sendTimeoutRef.current) {
+        clearTimeout(sendTimeoutRef.current);
+        sendTimeoutRef.current = null;
+      }
+    }
+  };
+
+
+
+  useEffect(() => {
+    return () => {
+      if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current);
+    };
   }, []);
+
+
+
+  // ✅ FIXED: Proper socket listener for message_deleted event
+  const handleMessageDeleted = useCallback((data: any) => {
+    console.log('🗑️ Received message_deleted event:', data);
+
+    const messageId = data.messageId || data.message?._id;
+    if (!messageId) return;
+
+    const conversationId = data.conversationId || data.message?.conversation_id;
+    if (conversationId !== selectedConvRef.current?._id) return;
+
+    const { type, userId } = data;
+
+    console.log(`📝 Processing delete: messageId=${messageId}, type=${type}`);
+
+    // ✅ CASE 1: Deleted for EVERYONE
+    if (type === 'everyone') {
+      setMessages(prev => prev.map(msg =>
+        msg._id === messageId
+          ? {
+            ...msg,
+            deleted: true,
+            deleted_for_me: true, // Current user sees it as deleted too
+            message: 'This message was deleted',
+            message_type: 'text',
+            media_url: undefined,
+            media_urls: undefined,
+            media_name: undefined,
+            media_mime: undefined,
+            media_size: undefined,
+            reactions: [],
+            reactions_count: 0,
+            edited: false
+          }
+          : msg
+      ));
+
+      // ✅ Update last_message in conversation if applicable
+      setConversations(prev => prev.map(conv =>
+        conv._id === conversationId && conv.last_message?._id === messageId
+          ? {
+            ...conv,
+            last_message: {
+              ...conv.last_message,
+              deleted: true,
+              deleted_for_me: true,
+              message: 'This message was deleted',
+              message_type: 'text'
+            } as any
+          }
+          : conv
+      ));
+    }
+    // ✅ CASE 2: Deleted for ME ONLY
+    else if (type === 'me') {
+      // Only update if it's for current user
+      if (userId !== currentUserId) {
+        console.log(`ℹ️ Delete is for another user (${userId}), skipping local update`);
+        return;
+      }
+
+      setMessages(prev => prev.map(msg =>
+        msg._id === messageId
+          ? {
+            ...msg,
+            deleted_for_me: true,
+            message: 'This message was deleted for you',
+            message_type: 'text',
+            media_url: undefined,
+            media_urls: undefined,
+            media_name: undefined,
+            reactions: [],
+            reactions_count: 0
+          }
+          : msg
+      ));
+
+      // ✅ Update last_message preview if applicable
+      setConversations(prev => prev.map(conv =>
+        conv._id === conversationId && conv.last_message?._id === messageId
+          ? {
+            ...conv,
+            last_message: {
+              ...conv.last_message,
+              deleted_for_me: true,
+              message: 'This message was deleted for you'
+            } as any
+          }
+          : conv
+      ));
+    }
+  }, [currentUserId]);
+
 
   const handleMessageEdited = useCallback((data: any) => {
     if (data.conversationId === selectedConvRef.current?._id) {
@@ -992,7 +1189,7 @@ const MessageScreen = () => {
     if (!token || socketRef.current?.connected) return;
 
     if (socketRef.current) {
-      socketRef.current.removeAllListeners();
+      socketRef.current.removeAllListeners(); // ✅ Clear all listeners trước khi reconnect
       socketRef.current.disconnect();
     }
 
@@ -1004,12 +1201,49 @@ const MessageScreen = () => {
       reconnectionDelay: 1000,
     });
 
+    // ✅ Handler cho message_sent_success
+    const handleMessageSentSuccess = (data: any) => {
+      console.log('✅ Message sent success:', data);
+
+      if (sendTimeoutRef.current) {
+        clearTimeout(sendTimeoutRef.current);
+        sendTimeoutRef.current = null;
+      }
+
+      setSending(false); // ← Reset sending state
+
+      if (data.clientTempId) {
+        setMessages(prev => prev.map(msg =>
+          msg.clientTempId === data.clientTempId
+            ? { ...msg, _id: data.messageId, clientTempId: undefined, status: 'sent' }
+            : msg
+        ));
+      }
+    };
+
+    // ✅ Handler cho message_error
+    const handleMessageError = (data: any) => {
+      console.error('❌ Message error:', data);
+
+      if (sendTimeoutRef.current) {
+        clearTimeout(sendTimeoutRef.current);
+        sendTimeoutRef.current = null;
+      }
+
+      setSending(false); // ← Reset sending state
+
+      if (data.clientTempId) {
+        setMessages(prev => prev.filter(m => m.clientTempId !== data.clientTempId));
+      }
+
+      showToast(data.error || 'Failed to send', 'error');
+    };
+
     socketRef.current.on('connect', () => {
       console.log('✅ Mobile socket connected');
       setIsSocketConnected(true);
       if (selectedConvRef.current) {
         socketRef.current?.emit('join_conversation', selectedConvRef.current._id);
-        console.log('📱 Joined room after connect:', selectedConvRef.current._id);
       }
     });
 
@@ -1023,16 +1257,15 @@ const MessageScreen = () => {
       setIsSocketConnected(false);
     });
 
-    socketRef.current.on('receive_message', d => handleNewMessage(d.message || d));
-    socketRef.current.on('message_sent', d => {
-      if (d.success) {
-        handleNewMessage(d.message || d.data?.message);
-        setSending(false);
-      } else {
-        setSending(false);
-        showToast('Failed to send', 'error');
-      }
+    socketRef.current.on('new_message', (data: any) => {
+      console.log('📨 Received new_message event:', data);
+      handleNewMessage(data);
     });
+
+    // ✅ Chỉ đăng ký 1 lần ở đây
+    socketRef.current.on('message_sent_success', handleMessageSentSuccess);
+    socketRef.current.on('message_error', handleMessageError);
+
     socketRef.current.on('message_edited', handleMessageEdited);
     socketRef.current.on('message_deleted', handleMessageDeleted);
     socketRef.current.on('reaction_added', handleReactionAdded);
@@ -1118,41 +1351,7 @@ const MessageScreen = () => {
     }
   };
 
-  const sendTextMessage = async () => {
-    if (!newMessage.trim() || !selectedConversation || sending) return;
-    const text = newMessage.trim();
-    const tempId = `temp_${Date.now()}`;
-    setNewMessage(''); setSending(true); emitTyping(false);
-    const tempMsg: Message = {
-      _id: tempId, clientTempId: tempId, conversation_id: selectedConversation._id,
-      sender_id: currentUser || { _id: currentUserId, name: 'You', role: 'patient' },
-      receiver_id: selectedConversation.participant, message: text, message_type: 'text',
-      read: false, timestamp: new Date().toISOString(), createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(), status: 'sending',
-    };
-    setMessages(p => [...p, tempMsg]);
-    setTimeout(() => scrollToBottom(), 100);
-    try {
-      const token = await AsyncStorage.getItem('authToken');
-      if (socketRef.current?.connected) {
-        socketRef.current.emit('send_message', {
-          conversationId: selectedConversation._id, receiverId: selectedConversation.participant._id,
-          message: text, messageType: 'text', clientTempId: tempId,
-        });
-      } else {
-        const res = await axios.post(`${API_ENDPOINT}/messages/send`,
-          { receiver_id: selectedConversation.participant._id, message: text, message_type: 'text', clientTempId: tempId },
-          { headers: { Authorization: `Bearer ${token}` } });
-        if (res.data.success) handleNewMessage(res.data.data?.message || res.data.data);
-      }
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    } catch {
-      setMessages(p => p.filter(m => m._id !== tempId));
-      showToast('Failed to send', 'error');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      setSending(false);
-    }
-  };
+
 
   const editMessage = async (messageId: string, newText: string) => {
     const token = await AsyncStorage.getItem('authToken');
@@ -1163,70 +1362,184 @@ const MessageScreen = () => {
     }
   };
 
+  // ✅ FIXED: Delete message with proper optimistic update
   const deleteMessage = async (msg: Message, type: 'me' | 'everyone') => {
-    // Prevent double delete
+    if (!msg._id || msg._id.startsWith('temp_')) {
+      showToast('Cannot delete a message that is still sending', 'info');
+      return;
+    }
     if (deletingMessagesRef.current.has(msg._id)) return;
     deletingMessagesRef.current.add(msg._id);
 
-    Alert.alert('Delete Message', `Delete this message ${type === 'everyone' ? 'for everyone' : 'for you only'}?`, [
-      { text: 'Cancel', style: 'cancel', onPress: () => deletingMessagesRef.current.delete(msg._id) },
-      {
-        text: 'Delete', style: 'destructive', onPress: async () => {
-          try {
+    Alert.alert(
+      'Delete Message',
+      `Delete this message ${type === 'everyone' ? 'for everyone' : 'for you only'}?`,
+      [
+        { text: 'Cancel', style: 'cancel', onPress: () => deletingMessagesRef.current.delete(msg._id) },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            const originalMessage = { ...msg };
+
             // Optimistic update
-            if (type === 'everyone') {
-              setMessages(prev => prev.map(m =>
-                m._id === msg._id
-                  ? { ...m, deleted: true, message: 'Message deleted', message_type: 'text', reactions: [] }
-                  : m
-              ));
-            } else {
-              setMessages(prev => prev.map(m =>
-                m._id === msg._id
-                  ? { ...m, deleted_for_me: true, message: 'This message was deleted', message_type: 'text', reactions: [] }
-                  : m
+            const deletedMessage = type === 'me'
+              ? {
+                ...msg,
+                deleted_for_me: true,
+                deleted: false,
+                message: 'This message was deleted for you',
+                message_type: 'text' as const,
+                media_url: undefined,
+                media_urls: undefined,
+                media_name: undefined,
+                reactions: [],
+                reactions_count: 0,
+              }
+              : {
+                ...msg,
+                deleted: true,
+                deleted_for_me: true,
+                message: 'This message was deleted',
+                message_type: 'text' as const,
+                media_url: undefined,
+                media_urls: undefined,
+                media_name: undefined,
+                edited: false,
+                reactions: [],
+                reactions_count: 0,
+              };
+
+            setMessages(prev => prev.map(m => m._id === msg._id ? deletedMessage : m));
+
+            if (selectedConversation?.last_message?._id === msg._id) {
+              setConversations(prev => prev.map(c =>
+                c._id === selectedConversation._id
+                  ? { ...c, last_message: deletedMessage as Message }
+                  : c
               ));
             }
 
-            const token = await AsyncStorage.getItem('authToken');
-
-            // Try socket first
-            if (socketRef.current?.connected) {
-              socketRef.current.emit('delete_message', {
-                messageId: msg._id,
-                conversationId: selectedConversation?._id,
-                type,
-              }, (response: any) => {
-                if (!response?.success) {
-                  console.error('Socket delete failed:', response?.error);
-                  // Fallback to REST
-                  deleteViaRest(msg, type, token);
-                }
-              });
-            } else {
+            try {
+              const token = await AsyncStorage.getItem('authToken');
+              // Go directly to REST — server will broadcast socket event to all participants
               await deleteViaRest(msg, type, token);
+
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              showToast(type === 'everyone' ? 'Deleted for everyone' : 'Deleted for you', 'success');
+            } catch (error) {
+              console.error('Delete failed:', error);
+              // Rollback
+              setMessages(prev => prev.map(m => m._id === msg._id ? originalMessage : m));
+              if (selectedConversation?.last_message?._id === msg._id) {
+                setConversations(prev => prev.map(c =>
+                  c._id === selectedConversation._id
+                    ? { ...c, last_message: originalMessage as Message }
+                    : c
+                ));
+              }
+              showToast('Failed to delete message', 'error');
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+            } finally {
+              deletingMessagesRef.current.delete(msg._id);
             }
-
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          } catch (error) {
-            console.error('Delete failed:', error);
-            showToast('Failed to delete', 'error');
-            // Reload messages to sync
-            if (selectedConversation) loadMessages(selectedConversation._id);
-          } finally {
-            deletingMessagesRef.current.delete(msg._id);
-          }
-        }
-      }
-    ]);
-  };
-
-  const deleteViaRest = async (msg: Message, type: 'me' | 'everyone', token: string | null) => {
-    const res = await axios.delete(`${API_ENDPOINT}/messages/${msg._id}`,
-      { headers: { Authorization: `Bearer ${token}` }, data: { type } }
+          },
+        },
+      ]
     );
-    if (!res.data.success) throw new Error('REST delete failed');
   };
+  // ✅ Helper to delete via REST API (with proper data transformation)
+  const deleteViaRest = async (msg: Message, type: 'me' | 'everyone', token: string | null, retryCount = 0) => {
+    // ✅ Double-check ID before making the request
+    if (!msg._id || msg._id.startsWith('temp_')) {
+      throw new Error('Invalid message ID');
+    }
+
+    try {
+      const res = await axios.delete(
+        `${API_ENDPOINT}/messages/${msg._id}`,
+        {
+          params: { type },  // ✅ Use params object instead of query string interpolation
+          headers: { Authorization: `Bearer ${token}` }
+        }
+      );
+
+      if (!res.data.success) {
+        throw new Error('REST delete failed');
+      }
+
+      return true;
+    } catch (err: any) {
+      // ✅ Don't retry on 400/403/404 — these are logic errors, not transient failures
+      const status = err?.response?.status;
+      if (status === 400 || status === 403 || status === 404) {
+        throw err; // fail immediately, no retry
+      }
+
+      console.error(`REST delete error (attempt ${retryCount + 1}):`, err);
+      if (retryCount < 2) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+        return deleteViaRest(msg, type, token, retryCount + 1);
+      }
+      throw err;
+    }
+  };
+  // Thêm interceptor cho axios
+  useEffect(() => {
+    // Log tất cả requests
+    const requestInterceptor = axios.interceptors.request.use(
+      (config) => {
+        console.log(`🌐 ${config.method?.toUpperCase()} ${config.url}`);
+        console.log('📦 Body:', config.data);
+        console.log('🔑 Headers:', config.headers);
+
+        // Đặc biệt log DELETE requests
+        if (config.method === 'delete') {
+          console.log('🗑️ DELETE REQUEST DETAILS:', {
+            url: config.url,
+            params: config.params,
+            data: config.data,
+            fullUrl: `${config.baseURL || ''}${config.url}`
+          });
+        }
+
+        return config;
+      },
+      (error) => {
+        console.error('❌ Request error:', error);
+        return Promise.reject(error);
+      }
+    );
+
+    const responseInterceptor = axios.interceptors.response.use(
+      (response) => {
+        if (response.config.method === 'delete') {
+          console.log('✅ DELETE RESPONSE:', {
+            status: response.status,
+            data: response.data,
+            url: response.config.url
+          });
+        }
+        return response;
+      },
+      (error) => {
+        if (error.config?.method === 'delete') {
+          console.error('❌ DELETE ERROR:', {
+            status: error.response?.status,
+            data: error.response?.data,
+            url: error.config?.url
+          });
+        }
+        return Promise.reject(error);
+      }
+    );
+
+    return () => {
+      axios.interceptors.request.eject(requestInterceptor);
+      axios.interceptors.response.eject(responseInterceptor);
+    };
+  }, []);
+
 
   const addReaction = async (msgId: string, emoji: string) => {
     try {
@@ -1269,6 +1582,7 @@ const MessageScreen = () => {
         const fd = new FormData();
         fd.append('receiver_id', selectedConversation.participant._id);
         fd.append('message_type', 'image');
+        fd.append('clientTempId', `temp_img_${Date.now()}`); // ✅ [MOBILE FIX] Pass tempId for media
         fd.append('file', { uri: img.uri, name: img.name, type: img.mime } as any);
         const res = await axios.post(`${API_ENDPOINT}/messages/send-with-media`, fd, { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' } });
         if (res.data.success) { handleNewMessage(res.data.data); setTimeout(() => scrollToBottom(), 100); }
@@ -1306,7 +1620,10 @@ const MessageScreen = () => {
       opts.push('Copy');
       opts.push('Delete for me');
       destructive.push(opts.length - 1);
-      if (isMe(msg)) { opts.push('Delete for everyone'); destructive.push(opts.length - 1); }
+      if (isMe(msg) && !msg.deleted && !msg.read) {
+        opts.push('Delete for everyone');
+        destructive.push(opts.length - 1);
+      }
       opts.push('Cancel');
       ActionSheetIOS.showActionSheetWithOptions({ options: opts, cancelButtonIndex: opts.length - 1, destructiveButtonIndex: destructive }, bi => {
         const o = opts[bi];
@@ -1363,22 +1680,29 @@ const MessageScreen = () => {
 
   const filteredConversations = conversations.filter(c => {
     if (!searchQuery.trim()) return true;
-    return c.participant.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const participantName = c.participant?.name || '';
+    return participantName.toLowerCase().includes(searchQuery.toLowerCase());
   });
 
   const renderContent = (item: Message) => {
-    if (item.deleted) return (
-      <View style={styles.deletedRow}>
-        <Ban size={13} color={COLORS.textMuted} />
-        <Text style={styles.deletedText}>Message deleted</Text>
-      </View>
-    );
-    if (item.deleted_for_me) return (
-      <View style={styles.deletedRow}>
-        <Ban size={13} color={COLORS.textMuted} />
-        <Text style={styles.deletedText}>This message was deleted</Text>
-      </View>
-    );
+    // ✅ FIXED: Properly handle deleted messages with right text/icon
+    if (item.deleted === true) {
+      return (
+        <View style={styles.deletedRow}>
+          <Ban size={13} color={COLORS.textMuted} />
+          <Text style={styles.deletedText}>This message was deleted</Text>
+        </View>
+      );
+    }
+    if (item.deleted_for_me === true) {
+      return (
+        <View style={styles.deletedRow}>
+          <Ionicons name="eye-off-outline" size={13} color={COLORS.textMuted} />
+          <Text style={styles.deletedText}>This message was deleted for you</Text>
+        </View>
+      );
+    }
+
     const me = isMe(item);
     if (item.message_type === 'image') {
       const urls: string[] = [];
@@ -1422,7 +1746,45 @@ const MessageScreen = () => {
     const showAv = showAvatar(item, index);
     const rxns = item.reactions?.length ? groupReactions(item.reactions, currentUserId) : [];
     const hasRxn = rxns.length > 0;
-    const isImg = item.message_type === 'image' && !item.deleted && !item.deleted_for_me;
+
+    // ✅ KIỂM TRA deleted_for_me TRƯỚC
+    const isDeletedForMe = item.deleted_for_me ||
+      (Array.isArray(item.deleted_for) && item.deleted_for.includes(currentUserId));
+    if (isDeletedForMe && !item.deleted) {
+      return (
+        <View style={[styles.msgRow, me ? styles.msgRowMe : styles.msgRowThem, { marginTop: 12, marginBottom: 3 }]}>
+          {!me && <View style={styles.avatarSlot}>
+            {showAv
+              ? <Image source={{ uri: buildAvatarUrl(item.sender_id) }} style={styles.msgAvatar} />
+              : <View style={styles.avatarGhost} />
+            }
+          </View>}
+          <View style={[styles.bubble, styles.bubbleThem, styles.bubbleDeleted, { alignSelf: me ? 'flex-end' : 'flex-start' }]}>
+            <Text style={styles.deletedText}>This message was deleted for you</Text>
+          </View>
+        </View>
+      );
+    }
+
+    // ✅ Hiển thị message đã xóa cho mọi người
+    if (item.deleted) {
+      return (
+        <View style={[styles.msgRow, me ? styles.msgRowMe : styles.msgRowThem, { marginTop: 12, marginBottom: 3 }]}>
+          {!me && <View style={styles.avatarSlot}>
+            {showAv
+              ? <Image source={{ uri: buildAvatarUrl(item.sender_id) }} style={styles.msgAvatar} />
+              : <View style={styles.avatarGhost} />
+            }
+          </View>}
+          <View style={[styles.bubble, styles.bubbleThem, styles.bubbleDeleted, { alignSelf: me ? 'flex-end' : 'flex-start' }]}>
+            <Text style={styles.deletedText}>Message deleted</Text>
+          </View>
+        </View>
+      );
+    }
+
+
+    const isImg = item.message_type === 'image' && !item.deleted;
     const myTL = 20, myTR = firstInGroup ? 20 : 6, myBR = lastInGroup ? 6 : 6, myBL = 20;
     const thTL = firstInGroup ? 20 : 6, thTR = 20, thBL = lastInGroup ? 6 : 6, thBR = 20;
 
@@ -1573,27 +1935,46 @@ const MessageScreen = () => {
             {uploadingMedia ? (
               <View style={styles.uploadingRow}>
                 <ActivityIndicator size="small" color={COLORS.primary} />
-                <Text style={styles.uploadingText}>Sending…</Text>
+                <Text style={styles.uploadingText}>Sending...</Text>
               </View>
             ) : (
               <>
-                <TouchableOpacity onPress={pickImages} style={styles.inputIconBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <TouchableOpacity onPress={pickImages} style={styles.inputIconBtn}>
                   <ImageIcon size={22} color={COLORS.primary} />
                 </TouchableOpacity>
+
                 <View style={styles.inputWrap}>
                   <TextInput
-                    style={styles.input} placeholder="Message…" placeholderTextColor={COLORS.textMuted}
-                    value={newMessage} onChangeText={handleTextChange} multiline maxLength={1000}
+                    style={styles.input}
+                    placeholder="Message…"
+                    placeholderTextColor={COLORS.textMuted}
+                    value={newMessage}
+                    onChangeText={handleTextChange}
+                    multiline
+                    maxLength={1000}
                   />
                 </View>
+
                 {newMessage.trim() ? (
-                  <TouchableOpacity onPress={sendTextMessage} style={[styles.sendBtn, sending && { opacity: 0.6 }]} disabled={sending}>
+                  <TouchableOpacity
+                    onPress={sendTextMessage}
+                    style={[styles.sendBtn, (sending || uploadingMedia) && { opacity: 0.6 }]}
+                    disabled={sending || uploadingMedia}
+                  >
                     <LinearGradient colors={[COLORS.primary, COLORS.primaryDark]} style={styles.sendBtnGrad}>
-                      {sending ? <ActivityIndicator size="small" color="#FFF" /> : <Send size={17} color="#FFF" />}
+                      {sending ? (
+                        <ActivityIndicator size="small" color="#FFF" />
+                      ) : (
+                        <Send size={17} color="#FFF" />
+                      )}
                     </LinearGradient>
                   </TouchableOpacity>
                 ) : (
-                  <TouchableOpacity onPress={() => { setSelectedMessage(null); setShowEmoji(true); }} style={styles.inputIconBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <TouchableOpacity
+                    onPress={() => { setSelectedMessage(null); setShowEmoji(true); }}
+                    style={styles.inputIconBtn}
+                    disabled={sending} // ✅ Disable khi đang gửi
+                  >
                     <Smile size={23} color={COLORS.primary} />
                   </TouchableOpacity>
                 )}
