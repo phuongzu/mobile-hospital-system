@@ -1,16 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { 
-  View, 
-  Text, 
-  FlatList, 
-  ActivityIndicator, 
-  StyleSheet, 
-  SafeAreaView, 
-  StatusBar, 
-  RefreshControl, 
+import {
+  View,
+  Text,
+  FlatList,
+  ActivityIndicator,
+  StyleSheet,
+  SafeAreaView,
+  StatusBar,
+  RefreshControl,
   ScrollView,
   Animated,
-  TouchableOpacity
+  TouchableOpacity,
+  Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -40,7 +41,7 @@ interface Doctor {
 
 const StarRating = ({ rating, size = 20 }: { rating: number; size?: number }) => (
   <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-    {[1,2,3,4,5].map(i => (
+    {[1, 2, 3, 4, 5].map(i => (
       <Ionicons
         key={i}
         name={i <= rating ? 'star' : 'star-outline'}
@@ -84,7 +85,7 @@ const FeedbackScreen: React.FC<Props> = ({ navigation, route }) => {
         allDoctorReviews.push({ doctor, reviews });
       }
       setDoctorReviews(allDoctorReviews);
-            Animated.timing(fadeAnim, {
+      Animated.timing(fadeAnim, {
         toValue: 1,
         duration: 600,
         useNativeDriver: true,
@@ -123,7 +124,7 @@ const FeedbackScreen: React.FC<Props> = ({ navigation, route }) => {
   const ReviewCard = ({ review, doctor }: { review: Review; doctor: Doctor }) => {
     const [cardScale] = useState(new Animated.Value(0.95));
     const [isLiked, setIsLiked] = useState(false);
-    
+
     useEffect(() => {
       Animated.spring(cardScale, {
         toValue: 1,
@@ -138,7 +139,7 @@ const FeedbackScreen: React.FC<Props> = ({ navigation, route }) => {
     };
 
     return (
-      <Animated.View 
+      <Animated.View
         style={[
           styles.card,
           {
@@ -166,14 +167,14 @@ const FeedbackScreen: React.FC<Props> = ({ navigation, route }) => {
               </View>
               <StarRating rating={review.rating} />
             </View>
-            
+
             {review.comment ? (
               <View style={styles.commentContainer}>
                 <Ionicons name="chatbubble-outline" size={16} color="#4A90E2" style={styles.commentIcon} />
                 <Text style={styles.comment}>{review.comment}</Text>
               </View>
             ) : null}
-            
+
             <View style={styles.cardFooter}>
               <View style={styles.dateContainer}>
                 <Ionicons name="time-outline" size={14} color="#8E8E93" />
@@ -186,10 +187,10 @@ const FeedbackScreen: React.FC<Props> = ({ navigation, route }) => {
                 </Text>
               </View>
               <TouchableOpacity style={styles.likeButton} onPress={handleLike}>
-                <Ionicons 
-                  name={isLiked ? 'heart' : 'heart-outline'} 
-                  size={18} 
-                  color={isLiked ? '#FF3B30' : '#8E8E93'} 
+                <Ionicons
+                  name={isLiked ? 'heart' : 'heart-outline'}
+                  size={18}
+                  color={isLiked ? '#FF3B30' : '#8E8E93'}
                 />
               </TouchableOpacity>
             </View>
@@ -226,20 +227,23 @@ const FeedbackScreen: React.FC<Props> = ({ navigation, route }) => {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#4A90E2" />
-      
-      <LinearGradient colors={["#4A90E2", "#357ABD"]} style={styles.header}>
-        <View style={styles.headerContent}>
-          <TouchableOpacity 
-            style={styles.backButton}
-            onPress={() => navigation.goBack()}
-          >
-            <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Doctor's Feedback</Text>
-          <Ionicons name="heart-circle" size={28} color="#FFFFFF" />
-        </View>
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+
+      <LinearGradient colors={['#4A90E2', '#63A4FF']} style={styles.header}>
+        <SafeAreaView>
+          <View style={styles.headerContent}>
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => navigation.goBack()}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Doctor's Feedback</Text>
+            <Ionicons name="heart-circle" size={28} color="#FFFFFF" />
+          </View>
+        </SafeAreaView>
       </LinearGradient>
 
       {loading ? (
@@ -269,15 +273,15 @@ const FeedbackScreen: React.FC<Props> = ({ navigation, route }) => {
           showsVerticalScrollIndicator={false}
         >
           <ReviewStats />
-          
+
           {doctorReviews.flatMap(({ doctor, reviews }) =>
             reviews.length > 0
               ? reviews.map(review => (
-                  <ReviewCard key={review._id} review={review} doctor={doctor} />
-                ))
+                <ReviewCard key={review._id} review={review} doctor={doctor} />
+              ))
               : []
           )}
-          
+
           {doctorReviews.every(dr => dr.reviews.length === 0) && (
             <Animated.View style={[styles.centered, { opacity: fadeAnim }]}>
               <Ionicons name="chatbubbles-outline" size={80} color="#4A90E2" />
@@ -287,7 +291,7 @@ const FeedbackScreen: React.FC<Props> = ({ navigation, route }) => {
           )}
         </ScrollView>
       )}
-    </SafeAreaView>
+    </View>
   );
 };
 
@@ -297,12 +301,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
   },
   header: {
-    paddingTop: 16,
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
     paddingBottom: 20,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
     elevation: 8,
   },
   headerContent: {

@@ -92,7 +92,7 @@ const useMedicalRecords = () => {
           setTimeout(() => { setShowSpotlight(true); setOnboardingMode('spotlight'); }, 1200);
         }
       }
-    } catch {}
+    } catch { }
   };
 
   const handleOnboardingComplete = () => {
@@ -102,7 +102,7 @@ const useMedicalRecords = () => {
 
   const handleSpotlightComplete = async () => {
     setShowSpotlight(false);
-    try { await AsyncStorage.setItem('hasSeenSpotlight', 'true'); } catch {}
+    try { await AsyncStorage.setItem('hasSeenSpotlight', 'true'); } catch { }
   };
 
   const fetchMedicalRecords = async (force = false) => {
@@ -184,7 +184,7 @@ const useMedicalRecords = () => {
       try {
         const savedTime = await AsyncStorage.getItem('lastMedicalRecordsUpdate');
         if (savedTime) setLastUpdated(parseInt(savedTime));
-      } catch {}
+      } catch { }
       checkOnboardingStatus();
       startPolling();
     };
@@ -242,7 +242,7 @@ const HomeScreen = () => {
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(aiPulse, { toValue: 1.08, duration: 1800, useNativeDriver: true }),
-        Animated.timing(aiPulse, { toValue: 1,    duration: 1800, useNativeDriver: true }),
+        Animated.timing(aiPulse, { toValue: 1, duration: 1800, useNativeDriver: true }),
       ])
     );
     loop.start();
@@ -286,7 +286,7 @@ const HomeScreen = () => {
       const role = await AsyncStorage.getItem('userRole');
       if (name) setUserName(name);
       if (role) setUserRole(role);
-    } catch {}
+    } catch { }
   };
 
   const updateRecordStatus = async (recordId: string, newStatus: string) => {
@@ -319,7 +319,7 @@ const HomeScreen = () => {
     try {
       const token = await AsyncStorage.getItem('authToken');
       if (token) await axios.post(`${API_BASE_URL}/api/auth/logout`, {}, { headers: { Authorization: `Bearer ${token}` }, timeout: 5000 });
-    } catch {}
+    } catch { }
     await AsyncStorage.multiRemove(['authToken', 'refreshToken', 'userName', 'userEmail', 'userRole', 'userData']);
     navigation.navigate('Login');
   };
@@ -331,11 +331,11 @@ const HomeScreen = () => {
     ]);
   };
 
-  const navigateToProfile            = () => navigation.navigate('Profile');
-  const navigateToSettings           = () => navigation.navigate('Settings');
-  const navigateToFindDoctor         = () => navigation.navigate('FindDoctor');
+  const navigateToProfile = () => navigation.navigate('Profile');
+  const navigateToSettings = () => navigation.navigate('Settings');
+  const navigateToFindDoctor = () => navigation.navigate('FindDoctor');
   const navigateToHistoryAppointment = () => navigation.navigate('HistoryAppointment');
-  const navigateToFeedback           = () => navigation.navigate('Feedback');
+  const navigateToFeedback = () => navigation.navigate('Feedback');
 
   // Navigates to the real doctor–patient message inbox
   const navigateToMessages = () => {
@@ -349,31 +349,31 @@ const HomeScreen = () => {
   const formatDate = (dateString: string) => {
     try {
       const date = new Date(dateString);
-      const now  = new Date();
+      const now = new Date();
       const diffMins = Math.floor((now.getTime() - date.getTime()) / 60000);
-      if (diffMins < 1)  return 'Just now';
+      if (diffMins < 1) return 'Just now';
       if (diffMins < 60) return `${diffMins} min ago`;
       const diffHours = Math.floor(diffMins / 60);
       if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
       const diffDays = Math.floor(diffHours / 24);
-      if (diffDays < 7)  return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+      if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
       return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     } catch { return dateString; }
   };
 
   const getPriorityIcon = (priority: string) => {
     const map: Record<string, { icon: string; color: string; label: string }> = {
-      urgent: { icon: 'warning',      color: '#FF3B30', label: 'Urgent' },
-      high:   { icon: 'error',        color: '#FF9500', label: 'High'   },
-      medium: { icon: 'info',         color: '#FFCC00', label: 'Medium' },
-      low:    { icon: 'low-priority', color: '#34C759', label: 'Low'    },
+      urgent: { icon: 'warning', color: '#FF3B30', label: 'Urgent' },
+      high: { icon: 'error', color: '#FF9500', label: 'High' },
+      medium: { icon: 'info', color: '#FFCC00', label: 'Medium' },
+      low: { icon: 'low-priority', color: '#34C759', label: 'Low' },
     };
     return map[priority] || { icon: 'help', color: '#8E8E93', label: 'Unknown' };
   };
 
   const getStatusIcon = (status: string) => {
     const map: Record<string, { icon: string; color: string; label: string }> = {
-      active:   { icon: 'access-time',  color: '#007AFF', label: 'Active'   },
+      active: { icon: 'access-time', color: '#007AFF', label: 'Active' },
       resolved: { icon: 'check-circle', color: '#34C759', label: 'Resolved' },
     };
     return map[status] || { icon: 'help', color: '#8E8E93', label: 'Unknown' };
@@ -383,10 +383,10 @@ const HomeScreen = () => {
 
   // ── Record card ────────────────────────────────────────────────────────────
   const renderRecord = ({ item }: { item: MedicalRecord }) => {
-    const isExpanded   = expandedId === item._id;
+    const isExpanded = expandedId === item._id;
     const priorityInfo = getPriorityIcon(item.priority);
-    const statusInfo   = getStatusIcon(item.status);
-    const isUpdating   = updatingRecord === item._id;
+    const statusInfo = getStatusIcon(item.status);
+    const isUpdating = updatingRecord === item._id;
 
     return (
       <TouchableOpacity
@@ -674,7 +674,7 @@ const HomeScreen = () => {
 
       {/* ── Filter tabs ─────────────────────────────────────────────────────── */}
       <View style={styles.filterTabs}>
-        {(['active', 'resolved','all'] as const).map(tab => (
+        {(['active', 'resolved', 'all'] as const).map(tab => (
           <TouchableOpacity
             key={tab}
             style={[styles.filterTab, filter === tab && styles.filterTabActive]}
@@ -742,9 +742,9 @@ const HomeScreen = () => {
 
 // ── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  safeArea:         { flex: 1, backgroundColor: '#f9fafb' },
+  safeArea: { flex: 1, backgroundColor: '#f9fafb' },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFFFFF' },
-  loadingText:      { marginTop: 12, fontSize: 16, color: '#6b7280', fontWeight: '500' },
+  loadingText: { marginTop: 12, fontSize: 16, color: '#6b7280', fontWeight: '500' },
 
   newDataBanner: {
     position: 'absolute', top: 0, left: 0, right: 0, zIndex: 1000,
@@ -761,18 +761,18 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05, shadowRadius: 10, elevation: 3,
   },
-  headerTop:           { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  userInfo:            { flexDirection: 'row', alignItems: 'center' },
-  avatar:              { width: 48, height: 48, borderRadius: 24, backgroundColor: '#0891b2', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
-  avatarText:          { fontSize: 20, fontWeight: '600', color: '#FFFFFF' },
-  userTextContainer:   { justifyContent: 'center' },
-  greeting:            { fontSize: 14, color: '#6b7280', marginBottom: 2 },
-  userName:            { fontSize: 18, fontWeight: '700', color: '#111827' },
-  headerActions:       { flexDirection: 'row', alignItems: 'flex-end', gap: 6 },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  userInfo: { flexDirection: 'row', alignItems: 'center' },
+  avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#0891b2', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  avatarText: { fontSize: 20, fontWeight: '600', color: '#FFFFFF' },
+  userTextContainer: { justifyContent: 'center' },
+  greeting: { fontSize: 14, color: '#6b7280', marginBottom: 2 },
+  userName: { fontSize: 18, fontWeight: '700', color: '#111827' },
+  headerActions: { flexDirection: 'row', alignItems: 'flex-end', gap: 6 },
 
   // Header icon buttons — now with visible labels to disambiguate
   iconButtonLabeled: { alignItems: 'center', gap: 3 },
-  iconButtonInner:   {
+  iconButtonInner: {
     width: 44, height: 44, borderRadius: 22,
     backgroundColor: '#f3f4f6', justifyContent: 'center', alignItems: 'center',
   },
@@ -791,72 +791,72 @@ const styles = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-around',
     backgroundColor: '#f8fafc', borderRadius: 16, padding: 16,
   },
-  statItem:   { alignItems: 'center', flex: 1 },
-  statValue:  { fontSize: 24, fontWeight: '700', color: '#0891b2', marginBottom: 4 },
-  statLabel:  { fontSize: 13, color: '#6b7280', fontWeight: '500' },
-  statDivider:{ width: 1, height: '100%', backgroundColor: '#e5e7eb' },
+  statItem: { alignItems: 'center', flex: 1 },
+  statValue: { fontSize: 24, fontWeight: '700', color: '#0891b2', marginBottom: 4 },
+  statLabel: { fontSize: 13, color: '#6b7280', fontWeight: '500' },
+  statDivider: { width: 1, height: '100%', backgroundColor: '#e5e7eb' },
 
   // Quick actions
-  quickActions:       { paddingHorizontal: 16, paddingVertical: 20 },
-  quickActionItem:    { alignItems: 'center', marginRight: 20, width: 70 },
-  quickActionIcon:    { width: 56, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
-  quickActionLabel:   { fontSize: 12, color: '#374151', fontWeight: '500', textAlign: 'center' },
+  quickActions: { paddingHorizontal: 16, paddingVertical: 20 },
+  quickActionItem: { alignItems: 'center', marginRight: 20, width: 70 },
+  quickActionIcon: { width: 56, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
+  quickActionLabel: { fontSize: 12, color: '#374151', fontWeight: '500', textAlign: 'center' },
 
   // Filter tabs
-  filterTabs:         { flexDirection: 'row', paddingHorizontal: 16, marginBottom: 16 },
-  filterTab:          { flex: 1, paddingVertical: 10, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  filterTabActive:    { borderBottomColor: '#0891b2' },
-  filterTabText:      { fontSize: 14, color: '#9ca3af', fontWeight: '600' },
-  filterTabTextActive:{ color: '#0891b2' },
+  filterTabs: { flexDirection: 'row', paddingHorizontal: 16, marginBottom: 16 },
+  filterTab: { flex: 1, paddingVertical: 10, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  filterTabActive: { borderBottomColor: '#0891b2' },
+  filterTabText: { fontSize: 14, color: '#9ca3af', fontWeight: '600' },
+  filterTabTextActive: { color: '#0891b2' },
 
   // Error
   errorContainer: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: '#fee2e2',
     marginHorizontal: 16, marginBottom: 16, padding: 12, borderRadius: 12,
   },
-  errorText:  { flex: 1, fontSize: 14, color: '#991b1b', marginLeft: 8 },
-  retryText:  { fontSize: 14, color: '#991b1b', fontWeight: '600', textDecorationLine: 'underline' },
+  errorText: { flex: 1, fontSize: 14, color: '#991b1b', marginLeft: 8 },
+  retryText: { fontSize: 14, color: '#991b1b', fontWeight: '600', textDecorationLine: 'underline' },
 
   // Records list
   listContent: { paddingHorizontal: 16, paddingBottom: 120 },
 
   // Card
-  card:         { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, marginBottom: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+  card: { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, marginBottom: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
   cardExpanded: { shadowOpacity: 0.1, shadowRadius: 12, elevation: 4 },
 
-  cardHeader:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
-  cardHeaderLeft:     { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  statusDot:          { width: 10, height: 10, borderRadius: 5, marginRight: 10 },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
+  cardHeaderLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  statusDot: { width: 10, height: 10, borderRadius: 5, marginRight: 10 },
   cardTitleContainer: { flex: 1 },
-  cardTitle:          { fontSize: 16, fontWeight: '600', color: '#111827', marginBottom: 2 },
-  cardDoctor:         { fontSize: 13, color: '#6b7280' },
-  cardDate:           { fontSize: 12, color: '#9ca3af' },
+  cardTitle: { fontSize: 16, fontWeight: '600', color: '#111827', marginBottom: 2 },
+  cardDoctor: { fontSize: 13, color: '#6b7280' },
+  cardDate: { fontSize: 12, color: '#9ca3af' },
 
-  cardPreview:  { marginBottom: 12 },
-  previewRow:   { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
-  previewText:  { fontSize: 13, color: '#4b5563', marginLeft: 8, flex: 1 },
+  cardPreview: { marginBottom: 12 },
+  previewRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
+  previewText: { fontSize: 13, color: '#4b5563', marginLeft: 8, flex: 1 },
 
-  cardFooter:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   tagContainer: { flexDirection: 'row', gap: 8 },
-  tag:          { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
-  tagText:      { fontSize: 11, fontWeight: '600', marginLeft: 4 },
-  cardActions:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  tag: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  tagText: { fontSize: 11, fontWeight: '600', marginLeft: 4 },
+  cardActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   actionButton: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#f3f4f6', justifyContent: 'center', alignItems: 'center' },
 
-  expandedContent:      { marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: '#f3f4f6' },
-  expandedSection:      { marginBottom: 16 },
+  expandedContent: { marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: '#f3f4f6' },
+  expandedSection: { marginBottom: 16 },
   expandedSectionTitle: { fontSize: 13, fontWeight: '600', color: '#6b7280', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
-  expandedText:         { fontSize: 15, color: '#1f2937', lineHeight: 22 },
+  expandedText: { fontSize: 15, color: '#1f2937', lineHeight: 22 },
 
   symptomsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  symptomItem:       { backgroundColor: '#f3f4f6', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
-  symptomItemText:   { fontSize: 13, color: '#374151' },
+  symptomItem: { backgroundColor: '#f3f4f6', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
+  symptomItemText: { fontSize: 13, color: '#374151' },
 
   appointmentInfo: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f0f9ff', padding: 12, borderRadius: 12 },
   appointmentText: { fontSize: 14, color: '#0369a1', marginLeft: 8, flex: 1 },
 
-  emptyState:    { alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
-  emptyTitle:    { fontSize: 18, fontWeight: '600', color: '#374151', marginTop: 16, marginBottom: 8 },
+  emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
+  emptyTitle: { fontSize: 18, fontWeight: '600', color: '#374151', marginTop: 16, marginBottom: 8 },
   emptySubtitle: { fontSize: 14, color: '#9ca3af', textAlign: 'center', lineHeight: 20 },
 
   // ── AI Chat FAB ────────────────────────────────────────────────────────────
@@ -886,7 +886,7 @@ const styles = StyleSheet.create({
   fabAIBadge: {
     position: 'absolute',
     top: -4, right: -6,
-    backgroundColor: '#f97316',          
+    backgroundColor: '#f97316',
     paddingHorizontal: 6, paddingVertical: 2,
     borderRadius: 8,
     borderWidth: 2, borderColor: '#FFFFFF',

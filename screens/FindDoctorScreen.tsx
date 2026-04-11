@@ -8,16 +8,12 @@ import {
   ActivityIndicator,
   RefreshControl,
   Dimensions,
-  Platform,
   SafeAreaView,
-  Image,
-  Animated,
   FlatList,
   StatusBar,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
 
 interface Doctor {
   _id: string;
@@ -104,7 +100,7 @@ const FindDoctorScreen = ({ navigation }: any) => {
         setLoading(false);
         return;
       }
-      
+
       const doctorFetches = activeSpecialties.map(spec =>
         fetch(`${API_BASE_URL}/api/doctors/specialty/${spec._id}`, {
           method: 'GET',
@@ -146,7 +142,7 @@ const FindDoctorScreen = ({ navigation }: any) => {
 
   const renderDoctorItem = ({ item: doctor }: { item: Doctor }) => {
     const iconInfo = getSpecialtyIcon(doctor.specialty_id?.name || 'Default');
-    
+
     return (
       <TouchableOpacity
         style={styles.doctorCard}
@@ -154,7 +150,6 @@ const FindDoctorScreen = ({ navigation }: any) => {
         activeOpacity={0.7}
       >
         <View style={styles.doctorCardInner}>
-          {/* Doctor Avatar with Gradient */}
           <View style={styles.doctorAvatarContainer}>
             <LinearGradient
               colors={iconInfo.gradient}
@@ -164,24 +159,24 @@ const FindDoctorScreen = ({ navigation }: any) => {
             >
               <Ionicons name="person" size={moderateScale(32)} color="white" />
             </LinearGradient>
-            
+
             {/* Status Badge */}
             <View style={[styles.statusBadge, {
               backgroundColor:
                 doctor.user_id?.status === 'working' ? '#10B981' :
-                doctor.user_id?.status === 'busy' ? '#F59E0B' : '#EF4444',
+                  doctor.user_id?.status === 'busy' ? '#F59E0B' : '#EF4444',
             }]}>
               <View style={styles.statusDot} />
             </View>
           </View>
-          
+
           {/* Doctor Info */}
           <View style={styles.doctorContent}>
             <View style={styles.doctorMainInfo}>
               <Text style={styles.doctorName} numberOfLines={1}>
                 Dr. {doctor.user_id?.name || 'Unknown'}
               </Text>
-              
+
               <View style={styles.specialtyTag}>
                 <LinearGradient
                   colors={[iconInfo.gradient[0] + '20', iconInfo.gradient[1] + '20']}
@@ -196,7 +191,7 @@ const FindDoctorScreen = ({ navigation }: any) => {
                 </LinearGradient>
               </View>
             </View>
-            
+
             {/* Doctor Details */}
             <View style={styles.doctorDetails}>
               {doctor.years_of_experience > 0 && (
@@ -207,34 +202,34 @@ const FindDoctorScreen = ({ navigation }: any) => {
                   <Text style={styles.detailText}>{doctor.years_of_experience}+ years</Text>
                 </View>
               )}
-              
+
               <View style={styles.detailItem}>
                 <View style={styles.detailIconContainer}>
-                  <Ionicons 
-                    name={doctor.user_id?.status === 'working' ? 'checkmark-circle' : 'close-circle'} 
-                    size={moderateScale(14)} 
-                    color={doctor.user_id?.status === 'working' ? '#10B981' : '#EF4444'} 
+                  <Ionicons
+                    name={doctor.user_id?.status === 'working' ? 'checkmark-circle' : 'close-circle'}
+                    size={moderateScale(14)}
+                    color={doctor.user_id?.status === 'working' ? '#10B981' : '#EF4444'}
                   />
                 </View>
                 <Text style={[styles.detailText, {
                   color: doctor.user_id?.status === 'working' ? '#10B981' : '#64748B'
                 }]}>
-                  {doctor.user_id?.status === 'working' ? 'Available Now' : 
-                   doctor.user_id?.status === 'busy' ? 'Busy' : 'Offline'}
+                  {doctor.user_id?.status === 'working' ? 'Available Now' :
+                    doctor.user_id?.status === 'busy' ? 'Busy' : 'Offline'}
                 </Text>
               </View>
             </View>
-            
+
             {/* Fee and Action */}
             <View style={styles.doctorFooter}>
               <View style={styles.feeBox}>
                 <Text style={styles.feeLabel}>Fee</Text>
                 <Text style={styles.feeAmount}>${doctor.consultation_fee}</Text>
               </View>
-              
+
               <TouchableOpacity
                 style={[
-                  styles.bookButton, 
+                  styles.bookButton,
                   doctor.user_id?.status !== 'working' && styles.bookButtonDisabled
                 ]}
                 onPress={() => navigation.navigate('Appointments', { doctor })}
@@ -246,10 +241,10 @@ const FindDoctorScreen = ({ navigation }: any) => {
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                 >
-                  <Ionicons 
-                    name="calendar" 
-                    size={moderateScale(16)} 
-                    color={doctor.user_id?.status === 'working' ? 'white' : '#94A3B8'} 
+                  <Ionicons
+                    name="calendar"
+                    size={moderateScale(16)}
+                    color={doctor.user_id?.status === 'working' ? 'white' : '#94A3B8'}
                   />
                   <Text style={[
                     styles.bookButtonText,
@@ -270,7 +265,7 @@ const FindDoctorScreen = ({ navigation }: any) => {
     const isActive = activeCategory === specialty._id;
     const iconInfo = getSpecialtyIcon(specialty.name);
     const count = getDoctorCount(specialty._id);
-    
+
     return (
       <TouchableOpacity
         style={[styles.specialtyCard, isActive && styles.specialtyCardActive]}
@@ -285,7 +280,7 @@ const FindDoctorScreen = ({ navigation }: any) => {
             end={{ x: 1, y: 1 }}
           >
             <View style={styles.specialtyIcon}>
-              <Ionicons name={iconInfo.icon as any} size={moderateScale(24)} color="white" />
+              <Ionicons name={iconInfo.icon as any} size={moderateScale(20)} color="white" />
             </View>
             <Text style={styles.specialtyNameActive} numberOfLines={2}>
               {specialty.name}
@@ -299,7 +294,7 @@ const FindDoctorScreen = ({ navigation }: any) => {
         ) : (
           <View style={styles.specialtyCardContent}>
             <View style={[styles.specialtyIconInactive, { backgroundColor: iconInfo.gradient[0] + '15' }]}>
-              <Ionicons name={iconInfo.icon as any} size={moderateScale(24)} color={iconInfo.gradient[0]} />
+              <Ionicons name={iconInfo.icon as any} size={moderateScale(20)} color={iconInfo.gradient[0]} />
             </View>
             <Text style={styles.specialtyName} numberOfLines={2}>
               {specialty.name}
@@ -318,9 +313,9 @@ const FindDoctorScreen = ({ navigation }: any) => {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <StatusBar barStyle="light-content" backgroundColor="#3B82F6" />
+        <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
         <LinearGradient
-          colors={['#3B82F6', '#2563EB']}
+          colors={['#4A90E2', '#63A4FF']}
           style={StyleSheet.absoluteFill}
         >
           <SafeAreaView style={styles.loadingContent}>
@@ -337,7 +332,7 @@ const FindDoctorScreen = ({ navigation }: any) => {
   if (error) {
     return (
       <View style={styles.errorContainer}>
-        <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
+        <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
         <SafeAreaView style={styles.errorContent}>
           <View style={styles.errorBox}>
             <View style={styles.errorIconContainer}>
@@ -347,7 +342,7 @@ const FindDoctorScreen = ({ navigation }: any) => {
             <Text style={styles.errorMessage}>{error}</Text>
             <TouchableOpacity style={styles.retryButton} onPress={fetchSpecialtiesAndDoctors}>
               <LinearGradient
-                colors={['#3B82F6', '#2563EB']}
+                colors={['#4A90E2', '#63A4FF']}
                 style={styles.retryButtonGradient}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
@@ -364,11 +359,11 @@ const FindDoctorScreen = ({ navigation }: any) => {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#3B82F6" />
-      
+      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+
       {/* Modern Header with Gradient */}
       <LinearGradient
-        colors={['#3B82F6', '#2563EB', '#1D4ED8']}
+        colors={['#4A90E2', '#63A4FF']}
         style={styles.header}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -380,17 +375,11 @@ const FindDoctorScreen = ({ navigation }: any) => {
                 <Ionicons name="arrow-back" size={moderateScale(24)} color="white" />
               </View>
             </TouchableOpacity>
-            
+
             <View style={styles.headerCenter}>
-              <Text style={styles.headerTitle}>Find Doctor</Text>
+              <Text style={styles.headerTitle}>Start Your Health Journey</Text>
               <Text style={styles.headerSubtitle}>Connect with specialists</Text>
             </View>
-            
-            <TouchableOpacity style={styles.headerButton}>
-              <View style={styles.headerButtonInner}>
-                <Ionicons name="search" size={moderateScale(24)} color="white" />
-              </View>
-            </TouchableOpacity>
           </View>
         </SafeAreaView>
       </LinearGradient>
@@ -405,7 +394,7 @@ const FindDoctorScreen = ({ navigation }: any) => {
               <Text style={styles.seeAllText}>See All</Text>
             </TouchableOpacity>
           </View>
-          
+
           <FlatList
             data={specialties}
             renderItem={renderSpecialtyItem}
@@ -424,8 +413,8 @@ const FindDoctorScreen = ({ navigation }: any) => {
                 {activeCategory ? specialties.find(s => s._id === activeCategory)?.name : 'All'} Doctors
               </Text>
               <Text style={styles.doctorsSubtitle}>
-                {activeCategory ? getDoctorCount(activeCategory) : 
-                 specialties.reduce((acc, s) => acc + getDoctorCount(s._id), 0)} doctors available
+                {activeCategory ? getDoctorCount(activeCategory) :
+                  specialties.reduce((acc, s) => acc + getDoctorCount(s._id), 0)} doctors available
               </Text>
             </View>
           </View>
@@ -473,7 +462,7 @@ const FindDoctorScreen = ({ navigation }: any) => {
                 </Text>
                 <TouchableOpacity style={styles.emptyButton} onPress={onRefresh}>
                   <LinearGradient
-                    colors={['#3B82F6', '#2563EB']}
+                    colors={['#4A90E2', '#63A4FF']}
                     style={styles.emptyButtonGradient}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
@@ -496,14 +485,14 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F8FAFC',
   },
-  
+
   // Header Styles
   header: {
-    paddingHorizontal: moderateScale(20),
+    paddingTop: verticalScale(20),
     paddingBottom: verticalScale(20),
-    borderBottomLeftRadius: moderateScale(30),
-    borderBottomRightRadius: moderateScale(30),
-    shadowColor: '#3B82F6',
+    borderBottomLeftRadius: moderateScale(24),
+    borderBottomRightRadius: moderateScale(24),
+    shadowColor: '#4A90E2',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 12,
@@ -513,13 +502,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: verticalScale(10),
   },
   headerButton: {
     width: moderateScale(44),
     height: moderateScale(44),
+    marginTop: verticalScale(20),
+    marginBottom: verticalScale(10),
+    borderRadius: moderateScale(20),
   },
   headerButtonInner: {
+    marginLeft: moderateScale(10),
+    marginBottom: moderateScale(10),
     width: '100%',
     height: '100%',
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
@@ -532,26 +525,27 @@ const styles = StyleSheet.create({
   headerCenter: {
     flex: 1,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   headerTitle: {
-    fontSize: moderateScale(24),
+    fontSize: moderateScale(20),
     fontWeight: '700',
     color: 'white',
     letterSpacing: 0.5,
   },
   headerSubtitle: {
-    fontSize: moderateScale(13),
+    fontSize: moderateScale(16),
     color: 'rgba(255, 255, 255, 0.85)',
     marginTop: verticalScale(2),
     fontWeight: '500',
   },
-  
+
   // Main Content
   mainContent: {
     flex: 1,
     marginTop: verticalScale(-20),
   },
-  
+
   // Specialties Section
   specialtiesSection: {
     paddingTop: verticalScale(24),
@@ -679,7 +673,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: 'white',
   },
-  
+
   // Doctors Section
   doctorsSection: {
     flex: 1,
@@ -707,7 +701,7 @@ const styles = StyleSheet.create({
   doctorsList: {
     paddingBottom: verticalScale(20),
   },
-  
+
   // Doctor Card
   doctorCard: {
     marginBottom: verticalScale(16),
@@ -864,7 +858,7 @@ const styles = StyleSheet.create({
   bookButtonTextDisabled: {
     color: '#94A3B8',
   },
-  
+
   // Empty State
   emptyScrollContent: {
     flexGrow: 1,
@@ -924,7 +918,7 @@ const styles = StyleSheet.create({
     color: 'white',
     letterSpacing: 0.3,
   },
-  
+
   // Loading State
   loadingContainer: {
     flex: 1,
@@ -952,7 +946,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
   },
-  
+
   // Error State
   errorContainer: {
     flex: 1,
