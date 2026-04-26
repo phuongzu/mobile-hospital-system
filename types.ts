@@ -1,12 +1,11 @@
-
 export enum StepStatus {
-  PENDING = 'pending',
-  IN_PROGRESS = 'in-progress',
-  COMPLETED = 'completed',
-  APPROVED = 'approved',
-  REJECTED = 'rejected',
-  SCHEDULED = 'scheduled',
-  MISSED = 'missed'
+  PENDING = "pending",
+  IN_PROGRESS = "in-progress",
+  COMPLETED = "completed",
+  APPROVED = "approved",
+  REJECTED = "rejected",
+  SCHEDULED = "scheduled",
+  MISSED = "missed",
 }
 
 export interface Medication {
@@ -22,8 +21,8 @@ export interface VitalSign {
   label: string;
   value: string;
   unit: string;
-  trend: 'up' | 'down' | 'stable';
-  status: 'normal' | 'warning' | 'critical';
+  trend: "up" | "down" | "stable";
+  status: "normal" | "warning" | "critical";
   icon: string;
 }
 
@@ -78,7 +77,7 @@ export interface MedicalRecord {
   _id: string;
   diagnosis: string;
   diagnosisDetail?: string;
-  severity: 'mild' | 'moderate' | 'severe' | 'critical';
+  severity: "mild" | "moderate" | "severe" | "critical";
   created_at: string;
   updated_at: string;
   doctor_id: Doctor;
@@ -86,7 +85,7 @@ export interface MedicalRecord {
   treatment_plan: TreatmentStep[];
   vitals?: VitalSign[];
   notes?: string;
-  consultation_status: 'in-progress' | 'completed';
+  consultation_status: "in-progress" | "completed";
 }
 
 export interface Message {
@@ -94,7 +93,7 @@ export interface Message {
   sender_id: string;
   receiver_id: string;
   message: string;
-  message_type: 'text' | 'image' | 'file';
+  message_type: "text" | "image" | "file";
   timestamp: string;
   read: boolean;
   medical_record_id?: string;
@@ -105,9 +104,9 @@ export interface Record {
   diagnosis: string;
   diagnosisDetail?: string;
   treatment_plan: TreatmentStep[];
-  consultation_status: 'in-progress' | 'completed';
-  status: 'active' | 'resolved' | 'follow_up' | 'chronic';
-  severity?: 'mild' | 'moderate' | 'severe' | 'critical';
+  consultation_status: "in-progress" | "completed";
+  status: "active" | "resolved" | "follow_up" | "chronic";
+  severity?: "mild" | "moderate" | "severe" | "critical";
   doctor_id: {
     _id: string;
     name: string;
@@ -136,9 +135,8 @@ export interface Appointment {
   specialty_id?: string;
   appointment_date: string;
   time_slot: string;
-  status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
+  status: "pending" | "confirmed" | "completed" | "cancelled";
   reason?: string;
   notes?: string;
   created_at: string;
 }
-

@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from 'react';
-import { View, Animated, StyleSheet } from 'react-native';
+import React, { useEffect, useRef } from "react";
+import { View, Animated, StyleSheet } from "react-native";
 
 interface SendingIndicatorProps {
   isSending: boolean;
@@ -25,7 +25,7 @@ const SendingIndicator: React.FC<SendingIndicatorProps> = ({ isSending }) => {
               duration: 400,
               useNativeDriver: true,
             }),
-          ])
+          ]),
         );
       };
 
@@ -35,7 +35,7 @@ const SendingIndicator: React.FC<SendingIndicatorProps> = ({ isSending }) => {
         createAnimation(dot3Anim),
       ]).start();
     } else {
-      [dot1Anim, dot2Anim, dot3Anim].forEach(anim => {
+      [dot1Anim, dot2Anim, dot3Anim].forEach((anim) => {
         anim.stopAnimation();
         anim.setValue(0);
       });
@@ -65,17 +65,17 @@ const SendingIndicator: React.FC<SendingIndicatorProps> = ({ isSending }) => {
 
 const styles = StyleSheet.create({
   container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "center",
     paddingHorizontal: 8,
   },
   dot: {
-    width: 4,
-    height: 4,
+    backgroundColor: "#999",
     borderRadius: 2,
-    backgroundColor: '#999',
+    height: 4,
     marginHorizontal: 2,
+    width: 4,
   },
 });
 

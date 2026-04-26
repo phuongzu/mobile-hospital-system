@@ -1,5 +1,5 @@
 // screens/BookingScreen.tsx
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -14,13 +14,13 @@ import {
   ActivityIndicator,
   RefreshControl,
   SafeAreaView,
-} from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
-import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { LinearGradient } from 'expo-linear-gradient';
+} from "react-native";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { LinearGradient } from "expo-linear-gradient";
 
-const { width, height } = Dimensions.get('window');
+const { width, height } = Dimensions.get("window");
 
 interface Doctor {
   _id: string;
@@ -50,15 +50,15 @@ interface BookingScreenProps {
   navigation: any;
 }
 
-const API_BASE_URL = 'http://localhost:3000';
+const API_BASE_URL = "http://localhost:3000";
 
 // ==================== STEP INDICATOR ====================
 
 const StepIndicator: React.FC<{ currentStep: number }> = ({ currentStep }) => {
   const steps = [
-    { id: 1, label: 'Date & Time', icon: 'calendar-outline' },
-    { id: 2, label: 'Symptoms', icon: 'medical-outline' },
-    { id: 3, label: 'Confirm', icon: 'checkmark-circle-outline' },
+    { id: 1, label: "Date & Time", icon: "calendar-outline" },
+    { id: 2, label: "Symptoms", icon: "medical-outline" },
+    { id: 3, label: "Confirm", icon: "checkmark-circle-outline" },
   ];
 
   return (
@@ -69,7 +69,9 @@ const StepIndicator: React.FC<{ currentStep: number }> = ({ currentStep }) => {
             <View
               style={[
                 stepStyles.stepCircle,
-                currentStep >= step.id ? stepStyles.stepCircleActive : stepStyles.stepCircleInactive,
+                currentStep >= step.id
+                  ? stepStyles.stepCircleActive
+                  : stepStyles.stepCircleInactive,
                 currentStep === step.id && stepStyles.stepCircleCurrent,
               ]}
             >
@@ -79,14 +81,16 @@ const StepIndicator: React.FC<{ currentStep: number }> = ({ currentStep }) => {
                 <Ionicons
                   name={step.icon as any}
                   size={currentStep === step.id ? 18 : 16}
-                  color={currentStep >= step.id ? 'white' : '#999'}
+                  color={currentStep >= step.id ? "white" : "#999"}
                 />
               )}
             </View>
             <Text
               style={[
                 stepStyles.stepLabel,
-                currentStep >= step.id ? stepStyles.stepLabelActive : stepStyles.stepLabelInactive,
+                currentStep >= step.id
+                  ? stepStyles.stepLabelActive
+                  : stepStyles.stepLabelInactive,
                 currentStep === step.id && stepStyles.stepLabelCurrent,
               ]}
             >
@@ -98,7 +102,9 @@ const StepIndicator: React.FC<{ currentStep: number }> = ({ currentStep }) => {
             <View
               style={[
                 stepStyles.connector,
-                currentStep > step.id ? stepStyles.connectorActive : stepStyles.connectorInactive,
+                currentStep > step.id
+                  ? stepStyles.connectorActive
+                  : stepStyles.connectorInactive,
               ]}
             />
           )}
@@ -109,69 +115,69 @@ const StepIndicator: React.FC<{ currentStep: number }> = ({ currentStep }) => {
 };
 
 const stepStyles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 32,
-    paddingHorizontal: 10,
-  },
-  stepItem: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  stepCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-    borderWidth: 2,
-  },
-  stepCircleActive: {
-    backgroundColor: '#1976d2',
-    borderColor: '#1976d2',
-  },
-  stepCircleInactive: {
-    backgroundColor: 'white',
-    borderColor: '#e0e0e0',
-  },
-  stepCircleCurrent: {
-    shadowColor: '#1976d2',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-    transform: [{ scale: 1.1 }],
-  },
-  stepLabel: {
-    fontSize: 12,
-    fontWeight: '500',
-    textAlign: 'center',
-    marginTop: 4,
-  },
-  stepLabelActive: {
-    color: '#1976d2',
-    fontWeight: '600',
-  },
-  stepLabelInactive: {
-    color: '#999',
-  },
-  stepLabelCurrent: {
-    fontWeight: 'bold',
-  },
   connector: {
     flex: 1,
     height: 2,
-    marginHorizontal: 4,
     marginBottom: 20,
+    marginHorizontal: 4,
   },
   connectorActive: {
-    backgroundColor: '#1976d2',
+    backgroundColor: "#1976d2",
   },
   connectorInactive: {
-    backgroundColor: '#e0e0e0',
+    backgroundColor: "#e0e0e0",
+  },
+  container: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 32,
+    paddingHorizontal: 10,
+  },
+  stepCircle: {
+    alignItems: "center",
+    borderRadius: 20,
+    borderWidth: 2,
+    height: 40,
+    justifyContent: "center",
+    marginBottom: 8,
+    width: 40,
+  },
+  stepCircleActive: {
+    backgroundColor: "#1976d2",
+    borderColor: "#1976d2",
+  },
+  stepCircleCurrent: {
+    elevation: 6,
+    shadowColor: "#1976d2",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    transform: [{ scale: 1.1 }],
+  },
+  stepCircleInactive: {
+    backgroundColor: "white",
+    borderColor: "#e0e0e0",
+  },
+  stepItem: {
+    alignItems: "center",
+    flex: 1,
+  },
+  stepLabel: {
+    fontSize: 12,
+    fontWeight: "500",
+    marginTop: 4,
+    textAlign: "center",
+  },
+  stepLabelActive: {
+    color: "#1976d2",
+    fontWeight: "600",
+  },
+  stepLabelCurrent: {
+    fontWeight: "bold",
+  },
+  stepLabelInactive: {
+    color: "#999",
   },
 });
 
@@ -181,7 +187,7 @@ const DoctorCard: React.FC<{ doctor: Doctor }> = ({ doctor }) => {
   return (
     <View style={doctorCardStyles.container}>
       <LinearGradient
-        colors={['#1976d2', '#1565c0']}
+        colors={["#1976d2", "#1565c0"]}
         style={doctorCardStyles.header}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
@@ -192,10 +198,12 @@ const DoctorCard: React.FC<{ doctor: Doctor }> = ({ doctor }) => {
           </View>
           <View style={doctorCardStyles.headerInfo}>
             <Text style={doctorCardStyles.doctorName}>
-              Dr. {doctor.user_id?.name || doctor.name || 'Unknown Doctor'}
+              Dr. {doctor.user_id?.name || doctor.name || "Unknown Doctor"}
             </Text>
             <Text style={doctorCardStyles.specialty}>
-              {doctor.specialty_id?.name || doctor.specialty || 'General Practice'}
+              {doctor.specialty_id?.name ||
+                doctor.specialty ||
+                "General Practice"}
             </Text>
           </View>
         </View>
@@ -206,21 +214,27 @@ const DoctorCard: React.FC<{ doctor: Doctor }> = ({ doctor }) => {
           {doctor.years_of_experience !== undefined && (
             <View style={doctorCardStyles.statItem}>
               <Ionicons name="time-outline" size={16} color="#1976d2" />
-              <Text style={doctorCardStyles.statText}>{doctor.years_of_experience} years</Text>
+              <Text style={doctorCardStyles.statText}>
+                {doctor.years_of_experience} years
+              </Text>
             </View>
           )}
 
           {doctor.rating !== undefined && (
             <View style={doctorCardStyles.statItem}>
               <Ionicons name="star" size={16} color="#FFD700" />
-              <Text style={doctorCardStyles.statText}>{doctor.rating.toFixed(1)}</Text>
+              <Text style={doctorCardStyles.statText}>
+                {doctor.rating.toFixed(1)}
+              </Text>
             </View>
           )}
 
           {doctor.consultation_fee !== undefined && (
             <View style={doctorCardStyles.statItem}>
               <Ionicons name="pricetag" size={16} color="#4CAF50" />
-              <Text style={doctorCardStyles.statText}>${doctor.consultation_fee}</Text>
+              <Text style={doctorCardStyles.statText}>
+                ${doctor.consultation_fee}
+              </Text>
             </View>
           )}
         </View>
@@ -229,12 +243,16 @@ const DoctorCard: React.FC<{ doctor: Doctor }> = ({ doctor }) => {
           {doctor.isAvailable ? (
             <View style={doctorCardStyles.availableBadge}>
               <View style={doctorCardStyles.availabilityDot} />
-              <Text style={doctorCardStyles.availabilityText}>Available Today</Text>
+              <Text style={doctorCardStyles.availabilityText}>
+                Available Today
+              </Text>
             </View>
           ) : (
             <View style={doctorCardStyles.busyBadge}>
               <Ionicons name="time" size={12} color="white" />
-              <Text style={doctorCardStyles.availabilityText}>Currently Busy</Text>
+              <Text style={doctorCardStyles.availabilityText}>
+                Currently Busy
+              </Text>
             </View>
           )}
         </View>
@@ -244,97 +262,97 @@ const DoctorCard: React.FC<{ doctor: Doctor }> = ({ doctor }) => {
 };
 
 const doctorCardStyles = StyleSheet.create({
-  container: {
+  availabilityContainer: {
+    alignItems: "center",
+  },
+  availabilityDot: {
+    backgroundColor: "#4CAF50",
+    borderRadius: 4,
+    height: 8,
+    marginRight: 8,
+    width: 8,
+  },
+  availabilityText: {
+    color: "#333",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  availableBadge: {
+    alignItems: "center",
+    backgroundColor: "#e8f5e9",
+    borderColor: "#4CAF50",
     borderRadius: 20,
-    marginBottom: 24,
-    backgroundColor: 'white',
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  header: {
-    paddingVertical: 20,
+    borderWidth: 1,
+    flexDirection: "row",
     paddingHorizontal: 16,
-  },
-  headerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    paddingVertical: 8,
   },
   avatar: {
     marginRight: 16,
   },
-  headerInfo: {
-    flex: 1,
+  busyBadge: {
+    alignItems: "center",
+    backgroundColor: "#ffebee",
+    borderColor: "#ff6b6b",
+    borderRadius: 20,
+    borderWidth: 1,
+    flexDirection: "row",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
   },
-  doctorName: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: 'white',
-    marginBottom: 4,
-  },
-  specialty: {
-    fontSize: 16,
-    color: 'rgba(255, 255, 255, 0.9)',
+  container: {
+    backgroundColor: "white",
+    borderRadius: 20,
+    elevation: 8,
+    marginBottom: 24,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
   },
   content: {
     padding: 20,
   },
-  statsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: 16,
+  doctorName: {
+    color: "white",
+    fontSize: 22,
+    fontWeight: "bold",
+    marginBottom: 4,
+  },
+  header: {
+    paddingHorizontal: 16,
+    paddingVertical: 20,
+  },
+  headerContent: {
+    alignItems: "center",
+    flexDirection: "row",
+  },
+  headerInfo: {
+    flex: 1,
+  },
+  specialty: {
+    color: "rgba(255, 255, 255, 0.9)",
+    fontSize: 16,
   },
   statItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f5f7fa',
+    alignItems: "center",
+    backgroundColor: "#f5f7fa",
+    borderRadius: 20,
+    flexDirection: "row",
+    gap: 6,
     paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: 20,
-    gap: 6,
   },
   statText: {
+    color: "#333",
     fontSize: 14,
-    color: '#333',
-    fontWeight: '500',
+    fontWeight: "500",
   },
-  availabilityContainer: {
-    alignItems: 'center',
-  },
-  availableBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#e8f5e9',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#4CAF50',
-  },
-  busyBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#ffebee',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#ff6b6b',
-  },
-  availabilityDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#4CAF50',
-    marginRight: 8,
-  },
-  availabilityText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
+  statsRow: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    marginBottom: 16,
   },
 });
 
@@ -388,7 +406,9 @@ const TimeSlotPicker: React.FC<{
     return (
       <View style={timeSlotStyles.loadingContainer}>
         <ActivityIndicator size="large" color="#1976d2" />
-        <Text style={timeSlotStyles.loadingText}>Loading available slots...</Text>
+        <Text style={timeSlotStyles.loadingText}>
+          Loading available slots...
+        </Text>
       </View>
     );
   }
@@ -408,15 +428,21 @@ const TimeSlotPicker: React.FC<{
 
         <View style={timeSlotStyles.legend}>
           <View style={timeSlotStyles.legendItem}>
-            <View style={[timeSlotStyles.legendDot, timeSlotStyles.legendAvailable]} />
+            <View
+              style={[timeSlotStyles.legendDot, timeSlotStyles.legendAvailable]}
+            />
             <Text style={timeSlotStyles.legendText}>Available</Text>
           </View>
           <View style={timeSlotStyles.legendItem}>
-            <View style={[timeSlotStyles.legendDot, timeSlotStyles.legendBooked]} />
+            <View
+              style={[timeSlotStyles.legendDot, timeSlotStyles.legendBooked]}
+            />
             <Text style={timeSlotStyles.legendText}>Booked</Text>
           </View>
           <View style={timeSlotStyles.legendItem}>
-            <View style={[timeSlotStyles.legendDot, timeSlotStyles.legendSelected]} />
+            <View
+              style={[timeSlotStyles.legendDot, timeSlotStyles.legendSelected]}
+            />
             <Text style={timeSlotStyles.legendText}>Selected</Text>
           </View>
         </View>
@@ -435,117 +461,117 @@ const TimeSlotPicker: React.FC<{
 
 const timeSlotStyles = StyleSheet.create({
   container: {
-    backgroundColor: 'white',
+    backgroundColor: "white",
     borderRadius: 16,
-    padding: 20,
+    elevation: 2,
     marginBottom: 20,
-    shadowColor: '#000',
+    padding: 20,
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    elevation: 2,
   },
   header: {
     marginBottom: 20,
   },
   headerTitle: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: "center",
+    flexDirection: "row",
     marginBottom: 12,
   },
-  title: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-    marginLeft: 8,
-  },
   legend: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    backgroundColor: '#f8f9fa',
-    padding: 12,
+    backgroundColor: "#f8f9fa",
     borderRadius: 10,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  legendDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 6,
+    flexDirection: "row",
+    justifyContent: "space-around",
+    padding: 12,
   },
   legendAvailable: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: "#4CAF50",
   },
   legendBooked: {
-    backgroundColor: '#ff6b6b',
+    backgroundColor: "#ff6b6b",
+  },
+  legendDot: {
+    borderRadius: 4,
+    height: 8,
+    marginRight: 6,
+    width: 8,
+  },
+  legendItem: {
+    alignItems: "center",
+    flexDirection: "row",
   },
   legendSelected: {
-    backgroundColor: '#1976d2',
+    backgroundColor: "#1976d2",
   },
   legendText: {
+    color: "#666",
     fontSize: 12,
-    color: '#666',
   },
   loadingContainer: {
-    alignItems: 'center',
+    alignItems: "center",
     padding: 40,
   },
   loadingText: {
-    marginTop: 12,
-    color: '#666',
+    color: "#666",
     fontSize: 14,
+    marginTop: 12,
+  },
+  row: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  slot: {
+    alignItems: "center",
+    borderRadius: 10,
+    height: 48,
+    justifyContent: "center",
+    position: "relative",
+    width: (width - 80) / 3 - 4,
+  },
+  slotAvailable: {
+    backgroundColor: "#f0f7ff",
+    borderColor: "#1976d2",
+    borderWidth: 1,
+  },
+  slotIcon: {
+    position: "absolute",
+    right: 4,
+    top: 4,
+  },
+  slotSelected: {
+    backgroundColor: "#1976d2",
+    borderColor: "#1976d2",
+    borderWidth: 2,
+  },
+  slotText: {
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  slotTextAvailable: {
+    color: "#1976d2",
+  },
+  slotTextSelected: {
+    color: "white",
+  },
+  slotTextUnavailable: {
+    color: "#999",
+  },
+  slotUnavailable: {
+    backgroundColor: "#f5f5f5",
+    borderColor: "#e0e0e0",
+    borderWidth: 1,
   },
   slotsContainer: {
     paddingBottom: 10,
   },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-  slot: {
-    width: (width - 80) / 3 - 4,
-    height: 48,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-    position: 'relative',
-  },
-  slotAvailable: {
-    backgroundColor: '#f0f7ff',
-    borderWidth: 1,
-    borderColor: '#1976d2',
-  },
-  slotSelected: {
-    backgroundColor: '#1976d2',
-    borderWidth: 2,
-    borderColor: '#1976d2',
-  },
-  slotUnavailable: {
-    backgroundColor: '#f5f5f5',
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-  },
-  slotText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  slotTextAvailable: {
-    color: '#1976d2',
-  },
-  slotTextSelected: {
-    color: 'white',
-  },
-  slotTextUnavailable: {
-    color: '#999',
-  },
-  slotIcon: {
-    position: 'absolute',
-    top: 4,
-    right: 4,
+  title: {
+    color: "#333",
+    fontSize: 18,
+    fontWeight: "bold",
+    marginLeft: 8,
   },
 });
 
@@ -559,7 +585,14 @@ const SymptomsInput: React.FC<{
   onAddSymptom: (symptom: string) => void;
 }> = ({ symptoms, notes, onSymptomsChange, onNotesChange, onAddSymptom }) => {
   const [charCount, setCharCount] = useState(symptoms.length);
-  const commonSymptoms = ['Fever', 'Headache', 'Cough', 'Sore throat', 'Fatigue', 'Body aches'];
+  const commonSymptoms = [
+    "Fever",
+    "Headache",
+    "Cough",
+    "Sore throat",
+    "Fatigue",
+    "Body aches",
+  ];
 
   const handleSymptomsChange = (text: string) => {
     onSymptomsChange(text);
@@ -610,7 +643,9 @@ const SymptomsInput: React.FC<{
       </View>
 
       <View style={symptomsStyles.inputGroup}>
-        <Text style={symptomsStyles.inputLabel}>Additional Notes (Optional)</Text>
+        <Text style={symptomsStyles.inputLabel}>
+          Additional Notes (Optional)
+        </Text>
         <TextInput
           style={symptomsStyles.notesInput}
           placeholder="Any additional information for the doctor..."
@@ -628,95 +663,94 @@ const SymptomsInput: React.FC<{
 };
 
 const symptomsStyles = StyleSheet.create({
+  charCount: {
+    color: "#999",
+    fontSize: 12,
+    marginTop: 4,
+    textAlign: "right",
+  },
   container: {
-    backgroundColor: 'white',
+    backgroundColor: "white",
     borderRadius: 16,
-    padding: 20,
+    elevation: 2,
     marginBottom: 16,
-    shadowColor: '#000',
+    padding: 20,
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    elevation: 2,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-    marginLeft: 8,
   },
   inputGroup: {
     marginBottom: 20,
   },
   inputLabel: {
+    color: "#333",
     fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
+    fontWeight: "600",
     marginBottom: 8,
   },
-  symptomsInput: {
-    backgroundColor: '#f8f9fa',
+  notesInput: {
+    backgroundColor: "#f8f9fa",
+    borderColor: "#e0e0e0",
     borderRadius: 12,
-    padding: 16,
-    minHeight: 100,
-    fontSize: 14,
-    color: '#333',
-    textAlignVertical: 'top',
     borderWidth: 1,
-    borderColor: '#e0e0e0',
+    color: "#333",
+    fontSize: 14,
+    minHeight: 80,
+    padding: 16,
+    textAlignVertical: "top",
   },
-  charCount: {
-    fontSize: 12,
-    color: '#999',
-    textAlign: 'right',
-    marginTop: 4,
+  sectionHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    marginBottom: 20,
+  },
+  sectionTitle: {
+    color: "#333",
+    fontSize: 18,
+    fontWeight: "bold",
+    marginLeft: 8,
   },
   suggestionsContainer: {
     marginBottom: 20,
   },
-  suggestionsTitle: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 8,
-  },
   suggestionsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 8,
   },
+  suggestionsTitle: {
+    color: "#666",
+    fontSize: 14,
+    marginBottom: 8,
+  },
   symptomChip: {
-    backgroundColor: '#e3f2fd',
+    backgroundColor: "#e3f2fd",
+    borderRadius: 16,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 16,
   },
   symptomChipText: {
+    color: "#1976d2",
     fontSize: 12,
-    color: '#1976d2',
-    fontWeight: '500',
+    fontWeight: "500",
   },
-  notesInput: {
-    backgroundColor: '#f8f9fa',
+  symptomsInput: {
+    backgroundColor: "#f8f9fa",
+    borderColor: "#e0e0e0",
     borderRadius: 12,
-    padding: 16,
-    minHeight: 80,
-    fontSize: 14,
-    color: '#333',
-    textAlignVertical: 'top',
     borderWidth: 1,
-    borderColor: '#e0e0e0',
+    color: "#333",
+    fontSize: 14,
+    minHeight: 100,
+    padding: 16,
+    textAlignVertical: "top",
   },
 });
 
 // ==================== MAIN BOOKING SCREEN ====================
 
 const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
-
   // ── Defensive params parsing ──────────────────────────────────────────────
   // Supports two shapes:
   //   1. { doctor: Doctor }            ← direct navigation with full object
@@ -732,17 +766,17 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
     params.doctor ??
     (params.initialData || params.doctorId
       ? {
-          _id: params.doctorId ?? params.initialData?.doctor_id ?? '',
-          name:
-            params.initialData?.doctor_name ??
-            params.initialData?.doctorName ??
-            'Unknown Doctor',
-          email: '',
-          specialty: params.initialData?.specialty ?? '',
-          consultation_fee: params.initialData?.consultation_fee,
-          rating: params.initialData?.doctor?.rating,
-          years_of_experience: params.initialData?.doctor?.years_of_experience,
-        }
+        _id: params.doctorId ?? params.initialData?.doctor_id ?? "",
+        name:
+          params.initialData?.doctor_name ??
+          params.initialData?.doctorName ??
+          "Unknown Doctor",
+        email: "",
+        specialty: params.initialData?.specialty ?? "",
+        consultation_fee: params.initialData?.consultation_fee,
+        rating: params.initialData?.doctor?.rating,
+        years_of_experience: params.initialData?.doctor?.years_of_experience,
+      }
       : null);
 
   // Guard: render fallback if no doctor data at all
@@ -770,10 +804,10 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
     tomorrow.setDate(tomorrow.getDate() + 1);
     return tomorrow;
   });
-  const [selectedTime, setSelectedTime] = useState('');
+  const [selectedTime, setSelectedTime] = useState("");
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [symptoms, setSymptoms] = useState('');
-  const [notes, setNotes] = useState('');
+  const [symptoms, setSymptoms] = useState("");
+  const [notes, setNotes] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [availableSlots, setAvailableSlots] = useState<TimeSlot[]>([]);
   const [currentStep, setCurrentStep] = useState(1);
@@ -782,11 +816,6 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
 
   const fadeAnim = useState(new Animated.Value(0))[0];
   const slideAnim = useState(new Animated.Value(30))[0];
-
-  const timeSlots = [
-    '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
-    '14:00', '14:30', '15:00', '15:30', '16:00', '16:30',
-  ];
 
   useEffect(() => {
     animateScreen();
@@ -801,8 +830,16 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
 
   const animateScreen = () => {
     Animated.parallel([
-      Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
-      Animated.timing(slideAnim, { toValue: 0, duration: 400, useNativeDriver: true }),
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 400,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 400,
+        useNativeDriver: true,
+      }),
     ]).start();
   };
 
@@ -814,54 +851,56 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
 
       const response = await fetch(
         `${API_BASE_URL}/api/patient/appointments/availability?doctor_id=${doctor._id}&date=${formattedDate}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
+        { headers: { Authorization: `Bearer ${token}` } }
       );
 
       if (response.ok) {
         const data = await response.json();
 
-        const slots = timeSlots.map(time => {
-          const slotData = data.availableSlots?.find((s: any) => s.time === time);
-          return {
-            time,
-            isAvailable: slotData ? slotData.isAvailable : true,
-            isReserved: slotData ? slotData.isReserved : false,
-            isBooked: slotData ? !slotData.isAvailable : false,
-            bookedInfo: slotData?.bookedInfo || null,
-          };
-        });
+        // ✅ Xử lý ngày bác sĩ nghỉ
+        if (data.isDayOff) {
+          setAvailableSlots([]);
+          Alert.alert(
+            'Doctor Not Available',
+            `This doctor does not work on ${selectedDate.toLocaleDateString('en-US', { weekday: 'long' })}. Please select another date.`
+          );
+          setLoadingSlots(false);
+          setRefreshing(false);
+          return;
+        }
+
+        // ✅ Dùng trực tiếp slots từ API — không map lại hardcode
+        const slots: TimeSlot[] = (data.availableSlots ?? []).map((s: any) => ({
+          time: s.time,
+          isAvailable: s.isAvailable,
+          isReserved: s.isReserved ?? false,
+          isBooked: !s.isAvailable,
+          bookedInfo: s.bookedInfo ?? null,
+        }));
 
         setAvailableSlots(slots);
 
-        if (data.summary?.isFullyBooked) {
+        if (data.summary?.isFullyBooked && slots.length > 0) {
           Alert.alert(
             'Fully Booked',
-            `No available time slots for ${selectedDate.toDateString()}. Please select another date.`
+            `No available slots for ${selectedDate.toDateString()}. Please select another date.`
           );
         }
       } else {
-        simulateAvailableSlots();
+        // Nếu API lỗi thì không simulate nữa — hiển thị thông báo
+        setAvailableSlots([]);
+        Alert.alert('Error', 'Unable to load available slots. Please try again.');
       }
     } catch (error) {
       console.error('Error fetching slots:', error);
-      simulateAvailableSlots();
+      setAvailableSlots([]);
+      Alert.alert('Network Error', 'Could not load time slots. Please check your connection.');
     } finally {
       setLoadingSlots(false);
       setRefreshing(false);
     }
   };
 
-  const simulateAvailableSlots = () => {
-    const slots = timeSlots.map((time, index) => ({
-      time,
-      isAvailable: index % 3 !== 0,
-      isReserved: index % 4 === 0,
-      isBooked: index % 5 === 0,
-    }));
-    setAvailableSlots(slots);
-  };
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -869,7 +908,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
   }, [selectedDate]);
 
   const handleDateChange = (event: any, date?: Date) => {
-    if (Platform.OS === 'android') {
+    if (Platform.OS === "android") {
       setShowDatePicker(false);
     }
     if (date) {
@@ -879,12 +918,15 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
       selected.setHours(0, 0, 0, 0);
 
       if (selected <= today) {
-        Alert.alert('Invalid Date', 'Please select a date starting from tomorrow.');
+        Alert.alert(
+          "Invalid Date",
+          "Please select a date starting from tomorrow.",
+        );
         return;
       }
 
       setSelectedDate(date);
-      setSelectedTime('');
+      setSelectedTime("");
     }
   };
 
@@ -895,31 +937,36 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
 
   const validateBooking = () => {
     if (!selectedTime) {
-      Alert.alert('Select Time', 'Please select a time slot for your appointment');
+      Alert.alert(
+        "Select Time",
+        "Please select a time slot for your appointment",
+      );
       return false;
     }
 
-    const selectedSlot = availableSlots.find(slot => slot.time === selectedTime);
+    const selectedSlot = availableSlots.find(
+      (slot) => slot.time === selectedTime,
+    );
     if (selectedSlot?.isReserved || selectedSlot?.isBooked) {
       Alert.alert(
-        'Slot Unavailable',
-        'This time slot is no longer available. Please choose a different time.'
+        "Slot Unavailable",
+        "This time slot is no longer available. Please choose a different time.",
       );
       return false;
     }
 
     if (!selectedSlot?.isAvailable) {
       Alert.alert(
-        'Slot Unavailable',
-        'This time slot is not available. Please choose a different time.'
+        "Slot Unavailable",
+        "This time slot is not available. Please choose a different time.",
       );
       return false;
     }
 
     if (symptoms.length > 0 && symptoms.length < 5) {
       Alert.alert(
-        'Symptoms Description',
-        'Please provide a more detailed description of your symptoms (minimum 5 characters)'
+        "Symptoms Description",
+        "Please provide a more detailed description of your symptoms (minimum 5 characters)",
       );
       return false;
     }
@@ -930,7 +977,10 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
     selected.setHours(0, 0, 0, 0);
 
     if (selected <= today) {
-      Alert.alert('Invalid Date', 'Appointments can only be booked for tomorrow onwards.');
+      Alert.alert(
+        "Invalid Date",
+        "Appointments can only be booked for tomorrow onwards.",
+      );
       return false;
     }
 
@@ -941,20 +991,20 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
     if (!validateBooking()) return;
 
     Alert.alert(
-      'Confirm Appointment',
-      `Are you sure you want to book this appointment?\n\n• Dr. ${doctor.user_id?.name || doctor.name}\n• ${selectedDate.toDateString()} at ${selectedTime}\n• Fee: $${doctor.consultation_fee || '150'}`,
+      "Confirm Appointment",
+      `Are you sure you want to book this appointment?\n\n• Dr. ${doctor.user_id?.name || doctor.name}\n• ${selectedDate.toDateString()} at ${selectedTime}\n• Fee: $${doctor.consultation_fee || "150"}`,
       [
-        { text: 'Edit', style: 'cancel' },
-        { text: 'Confirm', onPress: submitBooking, style: 'default' },
-      ]
+        { text: "Edit", style: "cancel" },
+        { text: "Confirm", onPress: submitBooking, style: "default" },
+      ],
     );
   };
 
   const submitBooking = async () => {
     setIsLoading(true);
     try {
-      const token = await AsyncStorage.getItem('authToken');
-      const userDataString = await AsyncStorage.getItem('userData');
+      const token = await AsyncStorage.getItem("authToken");
+      const userDataString = await AsyncStorage.getItem("userData");
 
       let user_id = null;
       if (userDataString) {
@@ -963,7 +1013,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
       }
 
       if (!user_id || !token) {
-        Alert.alert('Authentication Error', 'Please log in again.');
+        Alert.alert("Authentication Error", "Please log in again.");
         setIsLoading(false);
         return;
       }
@@ -974,50 +1024,55 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
       selected.setHours(0, 0, 0, 0);
 
       if (selected <= today) {
-        Alert.alert('Invalid Date', 'Appointments can only be booked for tomorrow onwards.');
+        Alert.alert(
+          "Invalid Date",
+          "Appointments can only be booked for tomorrow onwards.",
+        );
         setIsLoading(false);
         return;
       }
 
       const response = await fetch(`${API_BASE_URL}/api/patient/appointments`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           doctor_id: doctor._id,
           user_id,
           specialty_id: doctor.specialty_id,
-          appointment_date: selectedDate.toISOString().split('T')[0],
+          appointment_date: selectedDate.toISOString().split("T")[0],
           time_slot: selectedTime,
-          reason: symptoms || 'General consultation',
+          reason: symptoms || "General consultation",
           notes,
-          status: 'pending',
+          status: "pending",
         }),
       });
 
       if (response.ok) {
         Alert.alert(
-          'Booking Confirmed! 🎉',
+          "Booking Confirmed! 🎉",
           `Your appointment has been confirmed.\n\nA confirmation has been sent to your email.`,
-          [{ text: 'Done', onPress: () => navigation.navigate('Home') }]
+          [{ text: "Done", onPress: () => navigation.navigate("Home") }],
         );
       } else {
         const errorText = await response.text();
-        let errorMessage = 'Booking failed. Please try again.';
+        let errorMessage = "Booking failed. Please try again.";
         try {
           const errorData = JSON.parse(errorText);
           errorMessage = errorData.message || errorMessage;
         } catch (e) {
-          console.error('Error parsing response:', e);
+          console.error("Error parsing response:", e);
         }
         throw new Error(errorMessage);
       }
     } catch (error) {
       Alert.alert(
-        'Booking Failed',
-        error instanceof Error ? error.message : 'Network error. Please try again.'
+        "Booking Failed",
+        error instanceof Error
+          ? error.message
+          : "Network error. Please try again.",
       );
     } finally {
       setIsLoading(false);
@@ -1032,7 +1087,10 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
 
     return (
       <Animated.View
-        style={[styles.section, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}
+        style={[
+          styles.section,
+          { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
+        ]}
       >
         <View style={styles.sectionHeader}>
           <Ionicons name="calendar-outline" size={24} color="#1976d2" />
@@ -1048,11 +1106,11 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
           >
             <Ionicons name="calendar" size={20} color="#1976d2" />
             <Text style={styles.dateText}>
-              {selectedDate.toLocaleDateString('en-US', {
-                weekday: 'long',
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric',
+              {selectedDate.toLocaleDateString("en-US", {
+                weekday: "long",
+                year: "numeric",
+                month: "long",
+                day: "numeric",
               })}
             </Text>
             <Ionicons name="chevron-forward" size={16} color="#666" />
@@ -1063,7 +1121,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
           <DateTimePicker
             value={selectedDate}
             mode="date"
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            display={Platform.OS === "ios" ? "spinner" : "default"}
             onChange={handleDateChange}
             minimumDate={tomorrow}
             maximumDate={new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)}
@@ -1078,13 +1136,19 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
         />
 
         <View style={styles.navigationButtons}>
-          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
             <Ionicons name="arrow-back" size={18} color="#1976d2" />
             <Text style={styles.backButtonText}>Cancel</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.nextButton, !selectedTime && styles.nextButtonDisabled]}
+            style={[
+              styles.nextButton,
+              !selectedTime && styles.nextButtonDisabled,
+            ]}
             onPress={() => setCurrentStep(2)}
             disabled={!selectedTime}
           >
@@ -1098,7 +1162,10 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
 
   const renderSymptomsSection = () => (
     <Animated.View
-      style={[styles.section, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}
+      style={[
+        styles.section,
+        { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
+      ]}
     >
       <SymptomsInput
         symptoms={symptoms}
@@ -1109,13 +1176,19 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
       />
 
       <View style={styles.navigationButtons}>
-        <TouchableOpacity style={styles.backButton} onPress={() => setCurrentStep(1)}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => setCurrentStep(1)}
+        >
           <Ionicons name="arrow-back" size={18} color="#1976d2" />
           <Text style={styles.backButtonText}>Back</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.nextButton, symptoms.length < 5 && styles.nextButtonDisabled]}
+          style={[
+            styles.nextButton,
+            symptoms.length < 5 && styles.nextButtonDisabled,
+          ]}
           onPress={() => setCurrentStep(3)}
           disabled={symptoms.length < 5}
         >
@@ -1135,7 +1208,10 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
 
     return (
       <Animated.View
-        style={[styles.section, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}
+        style={[
+          styles.section,
+          { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
+        ]}
       >
         <View style={styles.confirmationHeader}>
           <View style={styles.confirmationIcon}>
@@ -1170,7 +1246,9 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Specialty</Text>
               <Text style={styles.summaryValue}>
-                {doctor.specialty_id?.name || doctor.specialty || 'General Practice'}
+                {doctor.specialty_id?.name ||
+                  doctor.specialty ||
+                  "General Practice"}
               </Text>
             </View>
 
@@ -1184,14 +1262,16 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Consultation Fee</Text>
               <Text style={[styles.summaryValue, styles.feeText]}>
-                ${doctor.consultation_fee || '150'}
+                ${doctor.consultation_fee || "150"}
               </Text>
             </View>
           </View>
 
           <View style={styles.summarySection}>
             <Text style={styles.summarySectionTitle}>Symptoms</Text>
-            <Text style={styles.symptomsSummary}>{symptoms || 'General consultation'}</Text>
+            <Text style={styles.symptomsSummary}>
+              {symptoms || "General consultation"}
+            </Text>
             {notes ? (
               <View style={styles.notesSummary}>
                 <Text style={styles.notesLabel}>Additional notes:</Text>
@@ -1203,11 +1283,16 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
 
         <View style={styles.totalContainer}>
           <Text style={styles.totalLabel}>Total Amount</Text>
-          <Text style={styles.totalAmount}>${doctor.consultation_fee || '150'}</Text>
+          <Text style={styles.totalAmount}>
+            ${doctor.consultation_fee || "150"}
+          </Text>
         </View>
 
         <View style={styles.navigationButtons}>
-          <TouchableOpacity style={styles.backButton} onPress={() => setCurrentStep(2)}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => setCurrentStep(2)}
+          >
             <Ionicons name="arrow-back" size={18} color="#1976d2" />
             <Text style={styles.backButtonText}>Edit</Text>
           </TouchableOpacity>
@@ -1226,7 +1311,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
               <>
                 <Ionicons name="checkmark-circle" size={20} color="white" />
                 <Text style={styles.confirmButtonText}>
-                  {isDateValid ? 'Confirm Booking' : 'Invalid Date'}
+                  {isDateValid ? "Confirm Booking" : "Invalid Date"}
                 </Text>
               </>
             )}
@@ -1241,7 +1326,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
   return (
     <SafeAreaView style={styles.container}>
       <LinearGradient
-        colors={['#1976d2', '#1565c0']}
+        colors={["#1976d2", "#1565c0"]}
         style={styles.header}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
@@ -1269,7 +1354,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={['#1976d2']}
+            colors={["#1976d2"]}
             tintColor="#1976d2"
           />
         }
@@ -1291,73 +1376,73 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
 
 const styles = StyleSheet.create({
   container: {
+    backgroundColor: "#f8f9fa",
     flex: 1,
-    backgroundColor: '#f8f9fa',
   },
 
   // Fallback screen styles
   fallbackContainer: {
+    alignItems: "center",
+    backgroundColor: "#f8f9fa",
     flex: 1,
-    backgroundColor: '#f8f9fa',
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
     paddingHorizontal: 32,
   },
   fallbackTitle: {
+    color: "#333",
     fontSize: 20,
-    fontWeight: '700',
-    color: '#333',
+    fontWeight: "700",
     marginTop: 16,
-    textAlign: 'center',
+    textAlign: "center",
   },
   fallbackSubtitle: {
+    color: "#666",
     fontSize: 14,
-    color: '#666',
-    marginTop: 8,
-    textAlign: 'center',
     lineHeight: 20,
+    marginTop: 8,
+    textAlign: "center",
   },
   fallbackButton: {
+    backgroundColor: "#1976d2",
+    borderRadius: 12,
     marginTop: 28,
-    backgroundColor: '#1976d2',
     paddingHorizontal: 32,
     paddingVertical: 14,
-    borderRadius: 12,
   },
   fallbackButtonText: {
-    color: 'white',
-    fontWeight: '600',
+    color: "white",
     fontSize: 16,
+    fontWeight: "600",
   },
 
   header: {
-    paddingTop: Platform.OS === 'ios' ? 10 : 20,
     paddingBottom: 20,
+    paddingTop: Platform.OS === "ios" ? 10 : 20,
   },
   headerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
     paddingHorizontal: 16,
   },
   backButtonHeader: {
-    width: 44,
+    alignItems: "center",
     height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    width: 44,
   },
   headerTitleContainer: {
-    alignItems: 'center',
+    alignItems: "center",
   },
   headerTitle: {
+    color: "white",
     fontSize: 20,
-    fontWeight: 'bold',
-    color: 'white',
+    fontWeight: "bold",
     marginBottom: 2,
   },
   headerSubtitle: {
+    color: "rgba(255, 255, 255, 0.8)",
     fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.8)',
   },
   headerPlaceholder: {
     width: 44,
@@ -1370,215 +1455,215 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: "center",
+    flexDirection: "row",
     marginBottom: 20,
   },
   sectionTitle: {
+    color: "#333",
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
+    fontWeight: "bold",
     marginLeft: 8,
   },
   dateContainer: {
     marginBottom: 20,
   },
   dateLabel: {
+    color: "#666",
     fontSize: 14,
-    color: '#666',
+    fontWeight: "500",
     marginBottom: 8,
-    fontWeight: '500',
   },
   datePickerButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f8f9fa',
+    alignItems: "center",
+    backgroundColor: "#f8f9fa",
+    borderColor: "#e0e0e0",
     borderRadius: 12,
-    padding: 16,
     borderWidth: 1,
-    borderColor: '#e0e0e0',
+    flexDirection: "row",
+    padding: 16,
   },
   dateText: {
+    color: "#333",
     flex: 1,
     fontSize: 16,
-    color: '#333',
+    fontWeight: "500",
     marginLeft: 12,
-    fontWeight: '500',
   },
   navigationButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
     marginTop: 8,
   },
   backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
+    alignItems: "center",
+    backgroundColor: "white",
+    borderColor: "#1976d2",
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#1976d2',
-    backgroundColor: 'white',
+    flexDirection: "row",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
   },
   backButtonText: {
-    color: '#1976d2',
-    fontWeight: '600',
+    color: "#1976d2",
     fontSize: 14,
+    fontWeight: "600",
     marginLeft: 6,
   },
   nextButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1976d2',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
+    alignItems: "center",
+    backgroundColor: "#1976d2",
     borderRadius: 10,
+    flexDirection: "row",
     gap: 6,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
   },
   nextButtonDisabled: {
-    backgroundColor: '#b0bec5',
+    backgroundColor: "#b0bec5",
   },
   nextButtonText: {
-    color: 'white',
-    fontWeight: '600',
+    color: "white",
     fontSize: 14,
+    fontWeight: "600",
   },
   confirmButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#4CAF50',
-    paddingVertical: 14,
-    paddingHorizontal: 28,
+    alignItems: "center",
+    backgroundColor: "#4CAF50",
     borderRadius: 10,
+    flexDirection: "row",
     gap: 8,
+    paddingHorizontal: 28,
+    paddingVertical: 14,
   },
   confirmButtonDisabled: {
-    backgroundColor: '#81c784',
+    backgroundColor: "#81c784",
     opacity: 0.6,
   },
   confirmButtonText: {
-    color: 'white',
-    fontWeight: 'bold',
+    color: "white",
     fontSize: 16,
+    fontWeight: "bold",
   },
   confirmationHeader: {
-    alignItems: 'center',
+    alignItems: "center",
     marginBottom: 24,
   },
   confirmationIcon: {
     marginBottom: 16,
   },
   confirmationTitle: {
+    color: "#333",
     fontSize: 22,
-    fontWeight: 'bold',
-    color: '#333',
+    fontWeight: "bold",
     marginBottom: 8,
   },
   confirmationSubtitle: {
+    color: "#666",
     fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
+    textAlign: "center",
   },
   warningBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff8e1',
+    alignItems: "center",
+    backgroundColor: "#fff8e1",
+    borderColor: "#ffecb3",
     borderRadius: 12,
-    padding: 16,
-    marginBottom: 24,
     borderWidth: 1,
-    borderColor: '#ffecb3',
+    flexDirection: "row",
     gap: 12,
+    marginBottom: 24,
+    padding: 16,
   },
   warningText: {
+    color: "#ff6f00",
     flex: 1,
-    color: '#ff6f00',
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   summaryCard: {
-    backgroundColor: 'white',
+    backgroundColor: "white",
+    borderColor: "#e0e0e0",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#e0e0e0',
-    padding: 16,
     marginBottom: 20,
+    padding: 16,
   },
   summarySection: {
     marginBottom: 20,
   },
   summarySectionTitle: {
+    borderBottomColor: "#f0f0f0",
+    borderBottomWidth: 1,
+    color: "#333",
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
+    fontWeight: "bold",
     marginBottom: 12,
     paddingBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
   },
   summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
     marginBottom: 12,
   },
   summaryLabel: {
+    color: "#666",
     fontSize: 14,
-    color: '#666',
   },
   summaryValue: {
+    color: "#333",
     fontSize: 14,
-    color: '#333',
-    fontWeight: '500',
-    textAlign: 'right',
+    fontWeight: "500",
+    textAlign: "right",
   },
   feeText: {
-    color: '#4CAF50',
-    fontWeight: 'bold',
+    color: "#4CAF50",
+    fontWeight: "bold",
   },
   symptomsSummary: {
+    color: "#333",
     fontSize: 14,
-    color: '#333',
     lineHeight: 20,
   },
   notesSummary: {
+    borderTopColor: "#f0f0f0",
+    borderTopWidth: 1,
     marginTop: 12,
     paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
   },
   notesLabel: {
+    color: "#666",
     fontSize: 14,
-    color: '#666',
-    fontWeight: '500',
+    fontWeight: "500",
     marginBottom: 4,
   },
   notesText: {
+    color: "#333",
     fontSize: 14,
-    color: '#333',
     lineHeight: 20,
   },
   totalContainer: {
-    backgroundColor: '#f8f9fa',
+    alignItems: "center",
+    backgroundColor: "#f8f9fa",
+    borderColor: "#e0e0e0",
     borderRadius: 12,
-    padding: 20,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 24,
     borderWidth: 1,
-    borderColor: '#e0e0e0',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 24,
+    padding: 20,
   },
   totalLabel: {
+    color: "#666",
     fontSize: 16,
-    color: '#666',
-    fontWeight: '500',
+    fontWeight: "500",
   },
   totalAmount: {
+    color: "#1976d2",
     fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1976d2',
+    fontWeight: "bold",
   },
   spacer: {
     height: 20,

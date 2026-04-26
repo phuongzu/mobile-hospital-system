@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { 
-  View, 
-  Text, 
-  TextInput, 
-  TouchableOpacity, 
-  StyleSheet, 
+import React, { useState, useEffect, useRef } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
   Alert,
   Image,
   KeyboardAvoidingView,
@@ -15,44 +15,47 @@ import {
   ScrollView,
   Modal,
   TouchableWithoutFeedback,
-  FlatList
-} from 'react-native';
-import axios from 'axios';
-import Icon from 'react-native-vector-icons/MaterialIcons';
-import { useNavigation } from '@react-navigation/native';
-import { StackNavigationProp } from '@react-navigation/stack';
-import { RootStackParamList } from '../navigationTypes';
-import DateTimePicker from '@react-native-community/datetimepicker';
+  FlatList,
+} from "react-native";
+import axios from "axios";
+import Icon from "react-native-vector-icons/MaterialIcons";
+import { useNavigation } from "@react-navigation/native";
+import { StackNavigationProp } from "@react-navigation/stack";
+import { RootStackParamList } from "../navigationTypes";
+import DateTimePicker from "@react-native-community/datetimepicker";
 
-type RegisterScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Register'>;
+type RegisterScreenNavigationProp = StackNavigationProp<
+  RootStackParamList,
+  "Register"
+>;
 
 // Options for dropdowns
 const GENDER_OPTIONS = [
-  { label: 'Male', value: 'male' },
-  { label: 'Female', value: 'female' },
-  { label: 'Other', value: 'other' },
-  { label: 'Prefer not to say', value: 'prefer_not_to_say' }
+  { label: "Male", value: "male" },
+  { label: "Female", value: "female" },
+  { label: "Other", value: "other" },
+  { label: "Prefer not to say", value: "prefer_not_to_say" },
 ];
 
 const BLOOD_TYPE_OPTIONS = [
-  { label: 'A+', value: 'A+' },
-  { label: 'A-', value: 'A-' },
-  { label: 'B+', value: 'B+' },
-  { label: 'B-', value: 'B-' },
-  { label: 'AB+', value: 'AB+' },
-  { label: 'AB-', value: 'AB-' },
-  { label: 'O+', value: 'O+' },
-  { label: 'O-', value: 'O-' },
-  { label: 'Unknown', value: 'unknown' }
+  { label: "A+", value: "A+" },
+  { label: "A-", value: "A-" },
+  { label: "B+", value: "B+" },
+  { label: "B-", value: "B-" },
+  { label: "AB+", value: "AB+" },
+  { label: "AB-", value: "AB-" },
+  { label: "O+", value: "O+" },
+  { label: "O-", value: "O-" },
+  { label: "Unknown", value: "unknown" },
 ];
 
 const RELATIONSHIP_OPTIONS = [
-  { label: 'Spouse', value: 'Spouse' },
-  { label: 'Parent', value: 'Parent' },
-  { label: 'Child', value: 'Child' },
-  { label: 'Sibling', value: 'Sibling' },
-  { label: 'Friend', value: 'Friend' },
-  { label: 'Other', value: 'Other' }
+  { label: "Spouse", value: "Spouse" },
+  { label: "Parent", value: "Parent" },
+  { label: "Child", value: "Child" },
+  { label: "Sibling", value: "Sibling" },
+  { label: "Friend", value: "Friend" },
+  { label: "Other", value: "Other" },
 ];
 
 interface EmergencyContact {
@@ -74,7 +77,7 @@ const OptionPicker = ({
   options,
   onSelect,
   placeholder = "Select an option",
-  iconName = "arrow-drop-down"
+  iconName = "arrow-drop-down",
 }: {
   label: string;
   value: string;
@@ -90,7 +93,7 @@ const OptionPicker = ({
     setModalVisible(false);
   };
 
-  const selectedOption = options.find(opt => opt.value === value);
+  const selectedOption = options.find((opt) => opt.value === value);
 
   return (
     <View style={styles.inputWrapper}>
@@ -99,7 +102,9 @@ const OptionPicker = ({
         style={styles.pickerButton}
         onPress={() => setModalVisible(true)}
       >
-        <Text style={selectedOption ? styles.pickerText : styles.pickerPlaceholder}>
+        <Text
+          style={selectedOption ? styles.pickerText : styles.pickerPlaceholder}
+        >
           {selectedOption ? `${label}: ${selectedOption.label}` : placeholder}
         </Text>
         <Icon name={iconName} size={20} color="#1976d2" />
@@ -123,14 +128,16 @@ const OptionPicker = ({
                     <TouchableOpacity
                       style={[
                         styles.optionItem,
-                        value === item.value && styles.optionItemSelected
+                        value === item.value && styles.optionItemSelected,
                       ]}
                       onPress={() => handleSelect(item.value)}
                     >
-                      <Text style={[
-                        styles.optionText,
-                        value === item.value && styles.optionTextSelected
-                      ]}>
+                      <Text
+                        style={[
+                          styles.optionText,
+                          value === item.value && styles.optionTextSelected,
+                        ]}
+                      >
                         {item.label}
                       </Text>
                       {value === item.value && (
@@ -156,31 +163,32 @@ const OptionPicker = ({
 
 const RegisterScreen = () => {
   const navigation = useNavigation<RegisterScreenNavigationProp>();
-  
+
   // Basic account info
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+
   // Additional required information
-  const [phone, setPhone] = useState('');
-  const [dateOfBirth, setDateOfBirth] = useState('');
-  const [gender, setGender] = useState('');
-  const [address, setAddress] = useState('');
-  const [bloodType, setBloodType] = useState('');
-  const [allergies, setAllergies] = useState('');
-  const [currentMedications, setCurrentMedications] = useState('');
+  const [phone, setPhone] = useState("");
+  const [dateOfBirth, setDateOfBirth] = useState("");
+  const [gender, setGender] = useState("");
+  const [address, setAddress] = useState("");
+  const [bloodType, setBloodType] = useState("");
+  const [allergies, setAllergies] = useState("");
+  const [currentMedications, setCurrentMedications] = useState("");
   const [emergencyContact, setEmergencyContact] = useState<EmergencyContact>({
-    name: '',
-    relationship: '',
-    phone: '',
-    email: ''
+    name: "",
+    relationship: "",
+    phone: "",
+    email: "",
   });
 
   const [isLoading, setIsLoading] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [currentStep, setCurrentStep] = useState(1); // 1: Basic info, 2: Additional info
-  
+  const [currentStep, setCurrentStep] = useState(1);
+
   // Fix: Use useRef for animated values
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(100)).current;
@@ -197,7 +205,7 @@ const RegisterScreen = () => {
         duration: 800,
         easing: Easing.out(Easing.back(1)),
         useNativeDriver: true,
-      })
+      }),
     ]).start();
 
     // Cleanup
@@ -231,17 +239,27 @@ const RegisterScreen = () => {
 
   const validateStep1 = () => {
     if (!name || !email || !password) {
-      Alert.alert('Missing Information', 'Please fill all required fields');
+      Alert.alert("Missing Information", "Please fill all required fields");
       return false;
     }
 
     if (!isValidEmail(email)) {
-      Alert.alert('Invalid Email', 'Please enter a valid email address');
+      Alert.alert("Invalid Email", "Please enter a valid email address");
       return false;
     }
 
     if (!isPasswordValid(password)) {
-      Alert.alert('Invalid Password', 'Password must be at least 6 characters long');
+      Alert.alert(
+        "Invalid Password",
+        "Password must be at least 6 characters long",
+      );
+      return false;
+    }
+    if (password !== confirmPassword) {
+      Alert.alert(
+        "Password Mismatch",
+        "Passwords do not match. Please try again.",
+      );
       return false;
     }
 
@@ -250,34 +268,49 @@ const RegisterScreen = () => {
 
   const validateStep2 = () => {
     if (!phone || !dateOfBirth || !gender || !address) {
-      Alert.alert('Missing Information', 'Please fill all required personal information');
+      Alert.alert(
+        "Missing Information",
+        "Please fill all required personal information",
+      );
       return false;
     }
 
     if (!isValidPhone(phone)) {
-      Alert.alert('Invalid Phone', 'Please enter a valid phone number');
+      Alert.alert("Invalid Phone", "Please enter a valid phone number");
       return false;
     }
 
     if (!isValidDateOfBirth(dateOfBirth)) {
-      Alert.alert('Invalid Date of Birth', 'Please enter a valid date of birth');
+      Alert.alert(
+        "Invalid Date of Birth",
+        "Please enter a valid date of birth",
+      );
       return false;
     }
 
     if (!emergencyContact.name || !emergencyContact.phone) {
-      Alert.alert('Emergency Contact Required', 'Please provide at least name and phone number for emergency contact');
+      Alert.alert(
+        "Emergency Contact Required",
+        "Please provide at least name and phone number for emergency contact",
+      );
       return false;
     }
 
     // Fix: Validate emergency contact phone
     if (!isValidPhone(emergencyContact.phone)) {
-      Alert.alert('Invalid Emergency Contact Phone', 'Please enter a valid phone number for emergency contact');
+      Alert.alert(
+        "Invalid Emergency Contact Phone",
+        "Please enter a valid phone number for emergency contact",
+      );
       return false;
     }
 
     // Fix: Validate emergency contact email if provided
     if (emergencyContact.email && !isValidEmail(emergencyContact.email)) {
-      Alert.alert('Invalid Emergency Contact Email', 'Please enter a valid email address for emergency contact');
+      Alert.alert(
+        "Invalid Emergency Contact Email",
+        "Please enter a valid email address for emergency contact",
+      );
       return false;
     }
 
@@ -297,7 +330,7 @@ const RegisterScreen = () => {
   const handleDateChange = (event: any, selectedDate?: Date) => {
     setShowDatePicker(false);
     if (selectedDate) {
-      setDateOfBirth(selectedDate.toISOString().split('T')[0]);
+      setDateOfBirth(selectedDate.toISOString().split("T")[0]);
     }
   };
 
@@ -307,76 +340,90 @@ const RegisterScreen = () => {
     }
 
     setIsLoading(true);
-    
+
     try {
       // First, register the basic account
-      const registerResponse = await axios.post('http://localhost:3000/api/auth/register', {
-        name,
-        email,
-        password,
-        role: 'patient'
-      });
+      const registerResponse = await axios.post(
+        "http://localhost:3000/api/auth/register",
+        {
+          name,
+          email,
+          password,
+          role: "patient",
+        },
+      );
 
       if (registerResponse.data.success) {
         // Login to get token
-        const loginResponse = await axios.post('http://localhost:3000/api/auth/login', {
-          email,
-          password
-        });
+        const loginResponse = await axios.post(
+          "http://localhost:3000/api/auth/login",
+          {
+            email,
+            password,
+          },
+        );
 
         const { accessToken } = loginResponse.data.data;
 
         // Update profile with additional information
-        await axios.put('http://localhost:3000/api/patient/profile', 
+        await axios.put(
+          "http://localhost:3000/api/patient/profile",
           {
             phoneNumber: phone,
             dateOfBirth,
             gender,
             address,
-            bloodType: bloodType || 'unknown',
-            allergies: allergies || 'None',
-            currentMedications: currentMedications || 'None'
+            bloodType: bloodType || "unknown",
+            allergies: allergies || "None",
+            currentMedications: currentMedications || "None",
           },
           {
             headers: {
-              'Authorization': `Bearer ${accessToken}`,
-              'Content-Type': 'application/json'
-            }
-          }
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+          },
         );
 
         // Add emergency contact
-        await axios.post('http://localhost:3000/api/patient/emergency-contact',
+        await axios.post(
+          "http://localhost:3000/api/patient/emergency-contact",
           emergencyContact,
           {
             headers: {
-              'Authorization': `Bearer ${accessToken}`,
-              'Content-Type': 'application/json'
-            }
-          }
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+          },
         );
 
         Alert.alert(
-          '✅ Registration Successful', 
-          'Your patient account has been created with all required information.',
-          [{ text: 'OK', onPress: () => navigation.navigate('Login') }]
+          "✅ Registration Successful",
+          "Your patient account has been created with all required information.",
+          [{ text: "OK", onPress: () => navigation.navigate("Login") }],
         );
       }
-    } catch (error: any) {      
-      let errorMessage = 'An error occurred during registration. Please try again.';
-      
+    } catch (error: any) {
+      let errorMessage =
+        "An error occurred during registration. Please try again.";
+
       if (error.response?.status === 400) {
-        errorMessage = 'Invalid registration data. Please check your information.';
+        errorMessage =
+          "Invalid registration data. Please check your information.";
       } else if (error.response?.status === 409) {
-        errorMessage = 'An account with this email already exists.';
+        errorMessage = "An account with this email already exists.";
       } else if (error.response?.data?.message) {
         errorMessage = error.response.data.message;
-      } else if (error.code === 'ERR_NETWORK' || error.message === 'Network Error') {
+      } else if (
+        error.code === "ERR_NETWORK" ||
+        error.message === "Network Error"
+      ) {
         // Fix: Correct error code for axios
-        errorMessage = 'Network connection error. Please check your internet connection.';
+        errorMessage =
+          "Network connection error. Please check your internet connection.";
       }
-      
-      Alert.alert('❌ Registration Failed', errorMessage);
+
+      Alert.alert("❌ Registration Failed", errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -385,7 +432,7 @@ const RegisterScreen = () => {
   const renderStep1 = () => (
     <View style={styles.stepContainer}>
       <Text style={styles.stepTitle}>Basic Account Information</Text>
-      
+
       <View style={styles.inputWrapper}>
         <Icon name="person" size={20} color="#1976d2" style={styles.icon} />
         <TextInput
@@ -422,13 +469,30 @@ const RegisterScreen = () => {
         />
       </View>
 
-      <TouchableOpacity 
+      <View style={styles.inputWrapper}>
+        <Icon name="lock" size={20} color="#1976d2" style={styles.icon} />
+        <TextInput
+          style={styles.input}
+          placeholder="Confirm Password *"
+          placeholderTextColor="#90a4ae"
+          secureTextEntry
+          onChangeText={setConfirmPassword}
+          value={confirmPassword}
+        />
+      </View>
+
+      <TouchableOpacity
         style={styles.nextButton}
         onPress={handleNextStep}
         disabled={isLoading}
       >
         <Text style={styles.buttonText}>Next: Personal Information</Text>
-        <Icon name="arrow-forward" size={20} color="white" style={styles.buttonIcon} />
+        <Icon
+          name="arrow-forward"
+          size={20}
+          color="white"
+          style={styles.buttonIcon}
+        />
       </TouchableOpacity>
     </View>
   );
@@ -436,11 +500,13 @@ const RegisterScreen = () => {
   const renderStep2 = () => (
     <View style={styles.stepContainer}>
       <Text style={styles.stepTitle}>Personal & Medical Information</Text>
-      <Text style={styles.stepSubtitle}>This information helps doctors provide better care</Text>
+      <Text style={styles.stepSubtitle}>
+        This information helps doctors provide better care
+      </Text>
 
       {/* Personal Information */}
       <Text style={styles.sectionTitle}>Personal Information</Text>
-      
+
       <View style={styles.inputWrapper}>
         <Icon name="phone" size={20} color="#1976d2" style={styles.icon} />
         <TextInput
@@ -459,8 +525,12 @@ const RegisterScreen = () => {
           style={styles.pickerButton}
           onPress={() => setShowDatePicker(true)}
         >
-          <Text style={dateOfBirth ? styles.pickerText : styles.pickerPlaceholder}>
-            {dateOfBirth ? `Date of Birth: ${new Date(dateOfBirth).toLocaleDateString()}` : 'Date of Birth *'}
+          <Text
+            style={dateOfBirth ? styles.pickerText : styles.pickerPlaceholder}
+          >
+            {dateOfBirth
+              ? `Date of Birth: ${new Date(dateOfBirth).toLocaleDateString()}`
+              : "Date of Birth *"}
           </Text>
           <Icon name="calendar-today" size={20} color="#1976d2" />
         </TouchableOpacity>
@@ -542,7 +612,9 @@ const RegisterScreen = () => {
           style={styles.input}
           placeholder="Emergency Contact Name *"
           placeholderTextColor="#90a4ae"
-          onChangeText={(text) => setEmergencyContact(prev => ({ ...prev, name: text }))}
+          onChangeText={(text) =>
+            setEmergencyContact((prev) => ({ ...prev, name: text }))
+          }
           value={emergencyContact.name}
         />
       </View>
@@ -551,7 +623,9 @@ const RegisterScreen = () => {
         label="Relationship"
         value={emergencyContact.relationship}
         options={RELATIONSHIP_OPTIONS}
-        onSelect={(value) => setEmergencyContact(prev => ({ ...prev, relationship: value }))}
+        onSelect={(value) =>
+          setEmergencyContact((prev) => ({ ...prev, relationship: value }))
+        }
         placeholder="Select Relationship"
       />
 
@@ -562,7 +636,9 @@ const RegisterScreen = () => {
           placeholder="Emergency Contact Phone *"
           placeholderTextColor="#90a4ae"
           keyboardType="phone-pad"
-          onChangeText={(text) => setEmergencyContact(prev => ({ ...prev, phone: text }))}
+          onChangeText={(text) =>
+            setEmergencyContact((prev) => ({ ...prev, phone: text }))
+          }
           value={emergencyContact.phone}
         />
       </View>
@@ -575,22 +651,29 @@ const RegisterScreen = () => {
           placeholderTextColor="#90a4ae"
           keyboardType="email-address"
           autoCapitalize="none"
-          onChangeText={(text) => setEmergencyContact(prev => ({ ...prev, email: text }))}
+          onChangeText={(text) =>
+            setEmergencyContact((prev) => ({ ...prev, email: text }))
+          }
           value={emergencyContact.email}
         />
       </View>
 
       <View style={styles.buttonRow}>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.backButton}
           onPress={handlePreviousStep}
           disabled={isLoading}
         >
-          <Icon name="arrow-back" size={20} color="#1976d2" style={styles.buttonIcon} />
+          <Icon
+            name="arrow-back"
+            size={20}
+            color="#1976d2"
+            style={styles.buttonIcon}
+          />
           <Text style={styles.backButtonText}>Back</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.registerButton}
           onPress={handleRegister}
           disabled={isLoading}
@@ -600,7 +683,12 @@ const RegisterScreen = () => {
           ) : (
             <>
               <Text style={styles.buttonText}>Complete Registration</Text>
-              <Icon name="check" size={20} color="white" style={styles.buttonIcon} />
+              <Icon
+                name="check"
+                size={20}
+                color="white"
+                style={styles.buttonIcon}
+              />
             </>
           )}
         </TouchableOpacity>
@@ -611,30 +699,40 @@ const RegisterScreen = () => {
   return (
     <View style={styles.container}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.keyboardView}
       >
         <ScrollView contentContainerStyle={styles.scrollContainer}>
-          <Animated.View 
+          <Animated.View
             style={[
               styles.content,
               {
                 opacity: fadeAnim,
-                transform: [{ translateY: slideAnim }]
-              }
+                transform: [{ translateY: slideAnim }],
+              },
             ]}
           >
             <View style={styles.logoContainer}>
-              <Image 
-                source={require('../assets/logo.jpg')} 
+              <Image
+                source={require("../assets/logo.jpg")}
                 style={styles.logo}
                 resizeMode="contain"
               />
               <Text style={styles.title}>Patient Registration</Text>
               <View style={styles.stepIndicator}>
-                <View style={[styles.stepDot, currentStep >= 1 && styles.stepDotActive]} />
+                <View
+                  style={[
+                    styles.stepDot,
+                    currentStep >= 1 && styles.stepDotActive,
+                  ]}
+                />
                 <View style={styles.stepLine} />
-                <View style={[styles.stepDot, currentStep >= 2 && styles.stepDotActive]} />
+                <View
+                  style={[
+                    styles.stepDot,
+                    currentStep >= 2 && styles.stepDotActive,
+                  ]}
+                />
               </View>
               <Text style={styles.stepText}>Step {currentStep} of 2</Text>
             </View>
@@ -645,8 +743,8 @@ const RegisterScreen = () => {
 
             <View style={styles.loginLink}>
               <Text style={styles.footerText}>Already have an account?</Text>
-              <TouchableOpacity 
-                onPress={() => navigation.navigate('Login')}
+              <TouchableOpacity
+                onPress={() => navigation.navigate("Login")}
                 style={styles.loginButton}
               >
                 <Text style={styles.loginText}>Sign In</Text>
@@ -661,59 +759,59 @@ const RegisterScreen = () => {
 
 const styles = StyleSheet.create({
   container: {
+    backgroundColor: "#e3f2fd",
     flex: 1,
-    backgroundColor: '#e3f2fd',
   },
   keyboardView: {
     flex: 1,
   },
   scrollContainer: {
     flexGrow: 1,
-    justifyContent: 'center',
+    justifyContent: "center",
   },
   content: {
     padding: 24,
   },
   logoContainer: {
-    alignItems: 'center',
+    alignItems: "center",
     marginBottom: 30,
   },
   logo: {
-    width: 80,
     height: 80,
     marginBottom: 16,
+    width: 80,
   },
   title: {
+    color: "#0d47a1",
     fontSize: 24,
-    fontWeight: '600',
-    color: '#0d47a1',
-    textAlign: 'center',
+    fontWeight: "600",
     marginBottom: 16,
+    textAlign: "center",
   },
   stepIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: "center",
+    flexDirection: "row",
     marginBottom: 8,
   },
   stepDot: {
-    width: 12,
-    height: 12,
+    backgroundColor: "#90a4ae",
     borderRadius: 6,
-    backgroundColor: '#90a4ae',
+    height: 12,
+    width: 12,
   },
   stepDotActive: {
-    backgroundColor: '#1976d2',
+    backgroundColor: "#1976d2",
   },
   stepLine: {
-    width: 40,
+    backgroundColor: "#90a4ae",
     height: 2,
-    backgroundColor: '#90a4ae',
     marginHorizontal: 8,
+    width: 40,
   },
   stepText: {
+    color: "#546e7a",
     fontSize: 14,
-    color: '#546e7a',
-    fontWeight: '500',
+    fontWeight: "500",
   },
   inputContainer: {
     marginBottom: 24,
@@ -722,35 +820,35 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   stepTitle: {
+    color: "#0d47a1",
     fontSize: 20,
-    fontWeight: '600',
-    color: '#0d47a1',
+    fontWeight: "600",
     marginBottom: 8,
-    textAlign: 'center',
+    textAlign: "center",
   },
   stepSubtitle: {
+    color: "#546e7a",
     fontSize: 14,
-    color: '#546e7a',
-    textAlign: 'center',
     marginBottom: 24,
+    textAlign: "center",
   },
   sectionTitle: {
+    color: "#1976d2",
     fontSize: 16,
-    fontWeight: '600',
-    color: '#1976d2',
-    marginTop: 16,
+    fontWeight: "600",
     marginBottom: 12,
+    marginTop: 16,
     paddingLeft: 8,
   },
   inputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'white',
+    alignItems: "center",
+    backgroundColor: "white",
     borderRadius: 10,
-    paddingHorizontal: 16,
-    marginBottom: 12,
     elevation: 2,
-    shadowColor: '#000',
+    flexDirection: "row",
+    marginBottom: 12,
+    paddingHorizontal: 16,
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -759,153 +857,153 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   input: {
+    color: "#424242",
     flex: 1,
-    height: 50,
-    color: '#424242',
     fontSize: 16,
+    height: 50,
   },
   multilineInput: {
     height: 80,
-    textAlignVertical: 'top',
     paddingVertical: 12,
+    textAlignVertical: "top",
   },
   pickerButton: {
+    alignItems: "center",
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
     height: 50,
+    justifyContent: "space-between",
   },
   pickerText: {
+    color: "#424242",
     fontSize: 16,
-    color: '#424242',
   },
   pickerPlaceholder: {
+    color: "#90a4ae",
     fontSize: 16,
-    color: '#90a4ae',
   },
   nextButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 16,
+    alignItems: "center",
+    backgroundColor: "#1976d2",
     borderRadius: 10,
-    backgroundColor: '#1976d2',
-    height: 50,
     elevation: 3,
+    flexDirection: "row",
+    height: 50,
+    justifyContent: "center",
+    marginTop: 16,
   },
   buttonRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 24,
+    flexDirection: "row",
     gap: 12,
+    justifyContent: "space-between",
+    marginTop: 24,
   },
   backButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    backgroundColor: "white",
+    borderColor: "#1976d2",
     borderRadius: 10,
-    backgroundColor: 'white',
-    height: 50,
     borderWidth: 2,
-    borderColor: '#1976d2',
+    flex: 1,
+    flexDirection: "row",
+    height: 50,
+    justifyContent: "center",
   },
   backButtonText: {
-    color: '#1976d2',
+    color: "#1976d2",
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
     marginLeft: 8,
   },
   registerButton: {
-    flex: 2,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    backgroundColor: "#1976d2",
     borderRadius: 10,
-    backgroundColor: '#1976d2',
-    height: 50,
     elevation: 3,
+    flex: 2,
+    flexDirection: "row",
+    height: 50,
+    justifyContent: "center",
   },
   buttonText: {
-    color: 'white',
+    color: "white",
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   buttonIcon: {
     marginLeft: 8,
   },
   loginLink: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "center",
     marginTop: 20,
   },
   footerText: {
-    color: '#424242',
+    color: "#424242",
     marginRight: 8,
   },
   loginButton: {
     padding: 4,
   },
   loginText: {
-    color: '#1976d2',
-    fontWeight: '500',
+    color: "#1976d2",
+    fontWeight: "500",
   },
   // Modal styles
   modalOverlay: {
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
     padding: 20,
   },
   modalContent: {
-    backgroundColor: 'white',
+    backgroundColor: "white",
     borderRadius: 12,
+    maxHeight: "80%",
     padding: 20,
-    width: '100%',
-    maxHeight: '80%',
+    width: "100%",
   },
   modalTitle: {
+    color: "#0d47a1",
     fontSize: 18,
-    fontWeight: '600',
-    color: '#0d47a1',
+    fontWeight: "600",
     marginBottom: 16,
-    textAlign: 'center',
+    textAlign: "center",
   },
   optionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 8,
+    alignItems: "center",
+    borderBottomColor: "#f0f0f0",
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 8,
+    paddingVertical: 12,
   },
   optionItemSelected: {
-    backgroundColor: '#e3f2fd',
+    backgroundColor: "#e3f2fd",
     borderRadius: 8,
   },
   optionText: {
+    color: "#424242",
     fontSize: 16,
-    color: '#424242',
   },
   optionTextSelected: {
-    color: '#1976d2',
-    fontWeight: '600',
+    color: "#1976d2",
+    fontWeight: "600",
   },
   modalCloseButton: {
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginTop: 8,
+    alignItems: "center",
+    borderTopColor: "#f0f0f0",
     borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
+    marginTop: 8,
+    paddingVertical: 16,
   },
   modalCloseText: {
-    color: '#1976d2',
+    color: "#1976d2",
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
   },
 });
 

@@ -1,35 +1,41 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { NavigationContainer, NavigationContainerRef } from '@react-navigation/native';
-import { createNativeStackNavigator, NativeStackNavigationOptions } from '@react-navigation/native-stack';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ActivityIndicator, View, StyleSheet, LogBox } from 'react-native';
-import HomeScreen from './screens/HomeScreen';
-import OnboardingScreen from './screens/OnboardingScreen';
-import LoginScreen from './screens/LoginScreen';
-import RegisterScreen from './screens/RegisterScreen';
-import ForgotPassword from './screens/ForgotPassword';
-import FindDoctorScreen from './screens/FindDoctorScreen';
-import BookingScreen from './screens/AppointmentScreen';
-import HistoryAppointment from './screens/HistoryAppointment';
-import ProfileScreen from './screens/ProfileScreen';
-import DoctorDetail from './screens/DoctorDetail';
-import SettingsScreen from './screens/SettingsScreen';
-import RecordDetail from './screens/RecordDetail';
-import ChangePasswordScreen from './screens/ChangePasswordScreen';
-import FeedbackScreen from './screens/FeedbackScreen';
-import MessageScreen from './screens/MessageScreen';
-import ChatWiget from './screens/ChatWiget';
-import ChatOption from './screens/ChatOptionScreen';
-import ChatHistoryScreen from './screens/ChatHistoryScreen';
-import MedicationSearchScreen from './screens/MedicationSearchScreen';
-import TermExplanationScreen from './screens/TermExplanationScreen';
-import LifestyleAdviceScreen from './screens/LifestyleAdviceScreen';
-import { ThemeProvider } from './contexts/ThemeContext';
+import React, { useEffect, useState, useCallback } from "react";
+import {
+  NavigationContainer,
+  NavigationContainerRef,
+} from "@react-navigation/native";
+import {
+  createNativeStackNavigator,
+  NativeStackNavigationOptions,
+} from "@react-navigation/native-stack";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { ActivityIndicator, View, StyleSheet, LogBox } from "react-native";
+import HomeScreen from "./screens/HomeScreen";
+import OnboardingScreen from "./screens/OnboardingScreen";
+import LoginScreen from "./screens/LoginScreen";
+import RegisterScreen from "./screens/RegisterScreen";
+import ForgotPassword from "./screens/ForgotPassword";
+import FindDoctorScreen from "./screens/FindDoctorScreen";
+import BookingScreen from "./screens/AppointmentScreen";
+import HistoryAppointment from "./screens/HistoryAppointment";
+import ProfileScreen from "./screens/ProfileScreen";
+import DoctorDetail from "./screens/DoctorDetail";
+import SettingsScreen from "./screens/SettingsScreen";
+import RecordDetail from "./screens/RecordDetail";
+import ChangePasswordScreen from "./screens/ChangePasswordScreen";
+import FeedbackScreen from "./screens/FeedbackScreen";
+import MessageScreen from "./screens/MessageScreen";
+import ChatWiget from "./screens/ChatWiget";
+import ChatOption from "./screens/ChatOptionScreen";
+import ChatHistoryScreen from "./screens/ChatHistoryScreen";
+import MedicationSearchScreen from "./screens/MedicationSearchScreen";
+import TermExplanationScreen from "./screens/TermExplanationScreen";
+import LifestyleAdviceScreen from "./screens/LifestyleAdviceScreen";
+import { ThemeProvider } from "./contexts/ThemeContext";
 
-import { io } from 'socket.io-client';
+import { io } from "socket.io-client";
 
 LogBox.ignoreLogs([
-  'Non-serializable values were found in the navigation state',
+  "Non-serializable values were found in the navigation state",
 ]);
 
 export type RootStackParamList = {
@@ -57,22 +63,25 @@ export type RootStackParamList = {
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
-const navigationRef = React.createRef<NavigationContainerRef<RootStackParamList>>();
+const navigationRef =
+  React.createRef<NavigationContainerRef<RootStackParamList>>();
 
 const App = () => {
-  const [socket] = useState(() => io('http://localhost:3000', { transports: ['websocket'] }));
+  const [socket] = useState(() =>
+    io("http://localhost:3000", { transports: ["websocket"] }),
+  );
 
   useEffect(() => {
     if (!socket) return;
-    socket.on('chat:receive', (data) => {
-      console.log('Received chat message:', data);
+    socket.on("chat:receive", (data) => {
+      console.log("Received chat message:", data);
     });
-    socket.on('notification:receive', (data) => {
-      console.log('Received notification:', data);
+    socket.on("notification:receive", (data) => {
+      console.log("Received notification:", data);
     });
     return () => {
-      socket.off('chat:receive');
-      socket.off('notification:receive');
+      socket.off("chat:receive");
+      socket.off("notification:receive");
     };
   }, [socket]);
 
@@ -86,14 +95,14 @@ const App = () => {
 
   const checkFirstLaunch = useCallback(async () => {
     try {
-      const hasLaunched = await AsyncStorage.getItem('@hasLaunched');
+      const hasLaunched = await AsyncStorage.getItem("@hasLaunched");
       if (hasLaunched === null) {
-        await AsyncStorage.setItem('@hasLaunched', 'true');
+        await AsyncStorage.setItem("@hasLaunched", "true");
         return true;
       }
       return false;
     } catch (error) {
-      console.error('AsyncStorage error:', error);
+      console.error("AsyncStorage error:", error);
       return false;
     }
   }, []);
@@ -106,8 +115,8 @@ const App = () => {
         showOnboarding: shouldShowOnboarding,
       });
     } catch (error) {
-      console.error('Initialization error:', error);
-      setAppState(prev => ({ ...prev, ready: true }));
+      console.error("Initialization error:", error);
+      setAppState((prev) => ({ ...prev, ready: true }));
     }
   }, [checkFirstLaunch]);
 
@@ -117,7 +126,7 @@ const App = () => {
 
   const screenOptions: NativeStackNavigationOptions = {
     headerShown: false,
-    animation: 'fade',
+    animation: "fade",
     gestureEnabled: false,
   };
 
@@ -138,29 +147,48 @@ const App = () => {
       <NavigationContainer ref={navigationRef}>
         <Stack.Navigator
           screenOptions={screenOptions}
-          initialRouteName={appState.showOnboarding ? 'Onboarding' : 'Login'}
+          initialRouteName={appState.showOnboarding ? "Onboarding" : "Login"}
         >
           <Stack.Screen name="Onboarding" component={OnboardingScreen} />
-          <Stack.Screen name="Login" component={LoginScreen} options={{ animationTypeForReplace: 'pop' }} />
+          <Stack.Screen
+            name="Login"
+            component={LoginScreen}
+            options={{ animationTypeForReplace: "pop" }}
+          />
           <Stack.Screen name="Register" component={RegisterScreen} />
           <Stack.Screen name="ForgotPassword" component={ForgotPassword} />
           <Stack.Screen name="Home" component={HomeScreen} />
           <Stack.Screen name="FindDoctor" component={FindDoctorScreen} />
           <Stack.Screen name="Appointments" component={BookingScreen} />
-          <Stack.Screen name="HistoryAppointment" component={HistoryAppointment} />
+          <Stack.Screen
+            name="HistoryAppointment"
+            component={HistoryAppointment}
+          />
           <Stack.Screen name="Message" component={MessageScreen} />
           <Stack.Screen name="Profile" component={ProfileScreen} />
           <Stack.Screen name="DoctorDetail" component={DoctorDetail} />
           <Stack.Screen name="Settings" component={SettingsScreen} />
           <Stack.Screen name="RecordDetail" component={RecordDetail} />
-          <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
+          <Stack.Screen
+            name="ChangePassword"
+            component={ChangePasswordScreen}
+          />
           <Stack.Screen name="Feedback" component={FeedbackScreen} />
           <Stack.Screen name="ChatWiget" component={ChatWiget} />
           <Stack.Screen name="ChatOption" component={ChatOption} />
           <Stack.Screen name="ChatHistory" component={ChatHistoryScreen} />
-          <Stack.Screen name="MedicationSearch" component={MedicationSearchScreen} />
-          <Stack.Screen name="TermExplanation" component={TermExplanationScreen} />
-          <Stack.Screen name="LifestyleAdvice" component={LifestyleAdviceScreen} />
+          <Stack.Screen
+            name="MedicationSearch"
+            component={MedicationSearchScreen}
+          />
+          <Stack.Screen
+            name="TermExplanation"
+            component={TermExplanationScreen}
+          />
+          <Stack.Screen
+            name="LifestyleAdvice"
+            component={LifestyleAdviceScreen}
+          />
         </Stack.Navigator>
       </NavigationContainer>
     </ThemeProvider>
@@ -169,10 +197,10 @@ const App = () => {
 
 const styles = StyleSheet.create({
   loadingContainer: {
+    alignItems: "center",
+    backgroundColor: "#ffffff",
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
+    justifyContent: "center",
   },
 });
 

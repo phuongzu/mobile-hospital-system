@@ -19,16 +19,11 @@
     "updates": {
       "fallbackToCacheTimeout": 0
     },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+    "assetBundlePatterns": ["**/*"],
     "ios": {
       "icon": "./assets/icon.png",
       "usesIcloudStorage": false,
-      "assetBundlePatterns": [
-        "assets/**/*.png",
-        "assets/**/*.png"
-      ],
+      "assetBundlePatterns": ["assets/**/*.png", "assets/**/*.png"],
       "supportsTablet": true,
       "bundleIdentifier": "com.yourcompany.wellbe",
       "buildNumber": "1.0.0",

@@ -1,11 +1,6 @@
-import React, { useRef } from 'react';
-import {
-  View,
-  Animated,
-  PanResponder,
-  StyleSheet,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import React, { useRef } from "react";
+import { View, Animated, PanResponder, StyleSheet } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 
 interface SwipeableMessageProps {
   children: React.ReactNode;
@@ -48,7 +43,7 @@ const SwipeableMessage: React.FC<SwipeableMessageProps> = ({
           useNativeDriver: false,
         }).start();
       },
-    })
+    }),
   ).current;
 
   return (
@@ -63,7 +58,7 @@ const SwipeableMessage: React.FC<SwipeableMessageProps> = ({
             opacity: pan.x.interpolate({
               inputRange: [0, 50, 100],
               outputRange: [0, 0.3, 0.8],
-              extrapolate: 'clamp',
+              extrapolate: "clamp",
             }),
           },
         ]}
@@ -76,7 +71,7 @@ const SwipeableMessage: React.FC<SwipeableMessageProps> = ({
               opacity: pan.x.interpolate({
                 inputRange: [30, 80],
                 outputRange: [0, 1],
-                extrapolate: 'clamp',
+                extrapolate: "clamp",
               }),
             },
           ]}
@@ -104,15 +99,13 @@ const SwipeableMessage: React.FC<SwipeableMessageProps> = ({
               opacity: pan.x.interpolate({
                 inputRange: [-100, -50, 0],
                 outputRange: [0.8, 0.3, 0],
-                extrapolate: 'clamp',
+                extrapolate: "clamp",
               }),
             },
           ]}
         >
           <Ionicons name="copy" size={20} color="#666" />
-          <Animated.Text style={styles.indicatorText}>
-            Copy
-          </Animated.Text>
+          <Animated.Text style={styles.indicatorText}>Copy</Animated.Text>
         </Animated.View>
       )}
     </View>
@@ -121,27 +114,27 @@ const SwipeableMessage: React.FC<SwipeableMessageProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    position: 'relative',
-  },
-  swipeIndicator: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    flexDirection: 'row',
-  },
-  replyIndicator: {
-    left: 12,
+    position: "relative",
   },
   copyIndicator: {
     right: 12,
   },
   indicatorText: {
-    marginLeft: 4,
+    color: "#4A90E2",
     fontSize: 12,
-    fontWeight: '600',
-    color: '#4A90E2',
+    fontWeight: "600",
+    marginLeft: 4,
+  },
+  replyIndicator: {
+    left: 12,
+  },
+  swipeIndicator: {
+    alignItems: "center",
+    bottom: 0,
+    flexDirection: "row",
+    justifyContent: "center",
+    position: "absolute",
+    top: 0,
   },
 });
 
