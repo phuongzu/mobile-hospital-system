@@ -887,7 +887,6 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
           );
         }
       } else {
-        // Nếu API lỗi thì không simulate nữa — hiển thị thông báo
         setAvailableSlots([]);
         Alert.alert('Error', 'Unable to load available slots. Please try again.');
       }

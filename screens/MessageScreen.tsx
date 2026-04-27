@@ -981,16 +981,16 @@ const ActionSheet = memo(
       },
       ...(isMe && message.message_type === "text" && !message.deleted
         ? [
-            {
-              label: "Edit",
-              icon: "✏️",
-              color: COLORS.textPrimary,
-              fn: () => {
-                onEdit(message);
-                onClose();
-              },
+          {
+            label: "Edit",
+            icon: "✏️",
+            color: COLORS.textPrimary,
+            fn: () => {
+              onEdit(message);
+              onClose();
             },
-          ]
+          },
+        ]
         : []),
       {
         label: "Copy",
@@ -1012,16 +1012,16 @@ const ActionSheet = memo(
       },
       ...(isMe
         ? [
-            {
-              label: "Delete for everyone",
-              icon: "⛔",
-              color: COLORS.error,
-              fn: () => {
-                onDelete(message, "everyone");
-                onClose();
-              },
+          {
+            label: "Delete for everyone",
+            icon: "⛔",
+            color: COLORS.error,
+            fn: () => {
+              onDelete(message, "everyone");
+              onClose();
             },
-          ]
+          },
+        ]
         : []),
     ];
     return (
@@ -1523,7 +1523,10 @@ const MessageScreen = () => {
   }, [isSocketConnected]);
 
   const isMe = useCallback(
-    (msg: Message) => msg.sender_id?._id === currentUserId,
+    (msg: any) => {
+      const senderId = (msg.sender_id?._id || msg.sender_id || "").toString();
+      return senderId === currentUserId.toString();
+    },
     [currentUserId],
   );
   const isSameSender = useCallback(
@@ -1587,6 +1590,10 @@ const MessageScreen = () => {
         message_type:
           rawMsg.message_type || rawMsg.message?.message_type || "text",
         media_url: rawMsg.media_url || rawMsg.message?.media_url,
+        media_urls: rawMsg.media_urls || rawMsg.message?.media_urls,
+        media_name: rawMsg.media_name || rawMsg.message?.media_name,
+        media_size: rawMsg.media_size || rawMsg.message?.media_size,
+        media_mime: rawMsg.media_mime || rawMsg.message?.media_mime,
         read: rawMsg.read || rawMsg.message?.read || false,
         timestamp:
           rawMsg.timestamp ||
@@ -1618,12 +1625,12 @@ const MessageScreen = () => {
             .map((c) =>
               c._id === convId
                 ? {
-                    ...c,
-                    last_message: msg,
-                    last_message_at: msg.timestamp || msg.createdAt,
-                    unread_count:
-                      active?._id === convId ? 0 : (c.unread_count || 0) + 1,
-                  }
+                  ...c,
+                  last_message: msg,
+                  last_message_at: msg.timestamp || msg.createdAt,
+                  unread_count:
+                    active?._id === convId ? 0 : (c.unread_count || 0) + 1,
+                }
                 : c,
             )
             .sort(
@@ -1758,11 +1765,11 @@ const MessageScreen = () => {
                 prev.map((m) =>
                   m.clientTempId === tempId || m._id === tempId
                     ? {
-                        ...m,
-                        _id: res.messageId || res.data?._id,
-                        clientTempId: undefined,
-                        status: "sent",
-                      }
+                      ...m,
+                      _id: res.messageId || res.data?._id,
+                      clientTempId: undefined,
+                      status: "sent",
+                    }
                     : m,
                 ),
               );
@@ -1866,20 +1873,20 @@ const MessageScreen = () => {
           prev.map((msg) =>
             msg._id === messageId
               ? {
-                  ...msg,
-                  deleted: true,
-                  deleted_for_me: true, // Current user sees it as deleted too
-                  message: "This message was deleted",
-                  message_type: "text",
-                  media_url: undefined,
-                  media_urls: undefined,
-                  media_name: undefined,
-                  media_mime: undefined,
-                  media_size: undefined,
-                  reactions: [],
-                  reactions_count: 0,
-                  edited: false,
-                }
+                ...msg,
+                deleted: true,
+                deleted_for_me: true, // Current user sees it as deleted too
+                message: "This message was deleted",
+                message_type: "text",
+                media_url: undefined,
+                media_urls: undefined,
+                media_name: undefined,
+                media_mime: undefined,
+                media_size: undefined,
+                reactions: [],
+                reactions_count: 0,
+                edited: false,
+              }
               : msg,
           ),
         );
@@ -1889,15 +1896,15 @@ const MessageScreen = () => {
           prev.map((conv) =>
             conv._id === conversationId && conv.last_message?._id === messageId
               ? {
-                  ...conv,
-                  last_message: {
-                    ...conv.last_message,
-                    deleted: true,
-                    deleted_for_me: true,
-                    message: "This message was deleted",
-                    message_type: "text",
-                  } as any,
-                }
+                ...conv,
+                last_message: {
+                  ...conv.last_message,
+                  deleted: true,
+                  deleted_for_me: true,
+                  message: "This message was deleted",
+                  message_type: "text",
+                } as any,
+              }
               : conv,
           ),
         );
@@ -1916,16 +1923,16 @@ const MessageScreen = () => {
           prev.map((msg) =>
             msg._id === messageId
               ? {
-                  ...msg,
-                  deleted_for_me: true,
-                  message: "This message was deleted for you",
-                  message_type: "text",
-                  media_url: undefined,
-                  media_urls: undefined,
-                  media_name: undefined,
-                  reactions: [],
-                  reactions_count: 0,
-                }
+                ...msg,
+                deleted_for_me: true,
+                message: "This message was deleted for you",
+                message_type: "text",
+                media_url: undefined,
+                media_urls: undefined,
+                media_name: undefined,
+                reactions: [],
+                reactions_count: 0,
+              }
               : msg,
           ),
         );
@@ -1935,13 +1942,13 @@ const MessageScreen = () => {
           prev.map((conv) =>
             conv._id === conversationId && conv.last_message?._id === messageId
               ? {
-                  ...conv,
-                  last_message: {
-                    ...conv.last_message,
-                    deleted_for_me: true,
-                    message: "This message was deleted for you",
-                  } as any,
-                }
+                ...conv,
+                last_message: {
+                  ...conv.last_message,
+                  deleted_for_me: true,
+                  message: "This message was deleted for you",
+                } as any,
+              }
               : conv,
           ),
         );
@@ -1964,10 +1971,10 @@ const MessageScreen = () => {
         prev.map((m) =>
           m._id === data.messageId
             ? {
-                ...m,
-                reactions: data.message?.reactions || data.reactions,
-                reactions_count: data.message?.reactions?.length || 0,
-              }
+              ...m,
+              reactions: data.message?.reactions || data.reactions,
+              reactions_count: data.message?.reactions?.length || 0,
+            }
             : m,
         ),
       );
@@ -1980,10 +1987,10 @@ const MessageScreen = () => {
         prev.map((m) =>
           m._id === data.messageId
             ? {
-                ...m,
-                reactions: data.message?.reactions || data.reactions,
-                reactions_count: data.message?.reactions?.length || 0,
-              }
+              ...m,
+              reactions: data.message?.reactions || data.reactions,
+              reactions_count: data.message?.reactions?.length || 0,
+            }
             : m,
         ),
       );
@@ -2010,12 +2017,19 @@ const MessageScreen = () => {
 
   const handleMessagesRead = useCallback(
     (data: any) => {
-      if (data.conversationId === selectedConvRef.current?._id) {
+      console.log("📖 [MOBILE] Received messages_read event:", data);
+      const convId = data.conversationId || data.conversation_id;
+      
+      if (convId === selectedConvRef.current?._id) {
+        console.log("📖 [MOBILE] Updating messages as read for conversation:", convId);
         setMessages((prev) =>
-          prev.map((m) => ({
-            ...m,
-            read: m.sender_id?._id === currentUserId ? true : m.read,
-          })),
+          prev.map((m) => {
+            const senderId = (m.sender_id?._id || m.sender_id || "").toString();
+            if (senderId === currentUserId.toString()) {
+              return { ...m, read: true };
+            }
+            return m;
+          }),
         );
       }
     },
@@ -2055,11 +2069,11 @@ const MessageScreen = () => {
           prev.map((msg) =>
             msg.clientTempId === data.clientTempId
               ? {
-                  ...msg,
-                  _id: data.messageId,
-                  clientTempId: undefined,
-                  status: "sent",
-                }
+                ...msg,
+                _id: data.messageId,
+                clientTempId: undefined,
+                status: "sent",
+              }
               : msg,
           ),
         );
@@ -2275,30 +2289,30 @@ const MessageScreen = () => {
             const deletedMessage =
               type === "me"
                 ? {
-                    ...msg,
-                    deleted_for_me: true,
-                    deleted: false,
-                    message: "This message was deleted for you",
-                    message_type: "text" as const,
-                    media_url: undefined,
-                    media_urls: undefined,
-                    media_name: undefined,
-                    reactions: [],
-                    reactions_count: 0,
-                  }
+                  ...msg,
+                  deleted_for_me: true,
+                  deleted: false,
+                  message: "This message was deleted for you",
+                  message_type: "text" as const,
+                  media_url: undefined,
+                  media_urls: undefined,
+                  media_name: undefined,
+                  reactions: [],
+                  reactions_count: 0,
+                }
                 : {
-                    ...msg,
-                    deleted: true,
-                    deleted_for_me: true,
-                    message: "This message was deleted",
-                    message_type: "text" as const,
-                    media_url: undefined,
-                    media_urls: undefined,
-                    media_name: undefined,
-                    edited: false,
-                    reactions: [],
-                    reactions_count: 0,
-                  };
+                  ...msg,
+                  deleted: true,
+                  deleted_for_me: true,
+                  message: "This message was deleted",
+                  message_type: "text" as const,
+                  media_url: undefined,
+                  media_urls: undefined,
+                  media_name: undefined,
+                  edited: false,
+                  reactions: [],
+                  reactions_count: 0,
+                };
 
             setMessages((prev) =>
               prev.map((m) => (m._id === msg._id ? deletedMessage : m)),
@@ -2515,10 +2529,32 @@ const MessageScreen = () => {
     try {
       const token = await AsyncStorage.getItem("authToken");
       for (const img of toSend) {
+        const tempId = `temp_img_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+        
+        // Optimistic update for each image
+        const tempMsg: Message = {
+          _id: tempId,
+          clientTempId: tempId,
+          conversation_id: selectedConversation._id,
+          sender_id: currentUser || { _id: currentUserId, name: "You", role: "patient" },
+          receiver_id: selectedConversation.participant,
+          message: "",
+          message_type: "image",
+          media_url: img.uri,
+          media_urls: [img.uri],
+          read: false,
+          timestamp: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          status: "sending",
+        };
+        setMessages(prev => [...prev, tempMsg]);
+        setTimeout(() => scrollToBottom(), 100);
+
         const fd = new FormData();
         fd.append("receiver_id", selectedConversation.participant._id);
         fd.append("message_type", "image");
-        fd.append("clientTempId", `temp_img_${Date.now()}`); // ✅ [MOBILE FIX] Pass tempId for media
+        fd.append("clientTempId", tempId);
         fd.append("file", {
           uri: img.uri,
           name: img.name,
@@ -2560,7 +2596,7 @@ const MessageScreen = () => {
             const dl = FileSystem.createDownloadResumable(
               buildMediaUrl(msg.media_url),
               ((FileSystem as any).documentDirectory || "") +
-                (msg.media_name || "file"),
+              (msg.media_name || "file"),
               {},
             );
             const r = await dl.downloadAsync();
