@@ -1,4 +1,3 @@
-// screens/BookingScreen.tsx
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
@@ -856,8 +855,6 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
 
       if (response.ok) {
         const data = await response.json();
-
-        // ✅ Xử lý ngày bác sĩ nghỉ
         if (data.isDayOff) {
           setAvailableSlots([]);
           Alert.alert(
@@ -868,8 +865,6 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
           setRefreshing(false);
           return;
         }
-
-        // ✅ Dùng trực tiếp slots từ API — không map lại hardcode
         const slots: TimeSlot[] = (data.availableSlots ?? []).map((s: any) => ({
           time: s.time,
           isAvailable: s.isAvailable,

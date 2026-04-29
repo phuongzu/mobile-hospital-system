@@ -254,7 +254,6 @@ async function saveBookedAppointmentId(id: string): Promise<void> {
       await AsyncStorage.setItem(BOOKED_APPOINTMENTS_KEY, JSON.stringify(ids));
     }
   } catch {
-    /* ignore */
   }
 }
 
@@ -2233,7 +2232,7 @@ const ChatWidget: React.FC<{
   const [bookedIds, setBookedIds] = useState<Set<string>>(new Set());
 
   const flatListRef = useRef<FlatList>(null);
-  const scrollTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const inputAnim = useRef(new Animated.Value(0)).current;
 
@@ -2701,7 +2700,7 @@ const ChatWidget: React.FC<{
 
         const confirmMsg: ChatMessage = {
           role: "assistant",
-          content: `✅ **Appointment confirmed!**\n\n👨‍⚕️ Dr. **${doctorName}**\n📅 Date: ${appointmentDate}\n⏰ Time: ${timeSlot}\n\nPlease arrive 15 minutes early.`,
+          content: `✅ Appointment confirmed!\n\n👨‍⚕️ Dr. ${doctorName}\n📅 Date: ${appointmentDate}\n⏰ Time: ${timeSlot}\n\nPlease arrive 15 minutes early.`,
           timestamp: new Date().toISOString(),
           id: `booking-${Date.now()}`,
           language: "en",
@@ -2967,8 +2966,6 @@ const ChatWidget: React.FC<{
     "🔄 I want to reschedule",
     "❌ Cancel my appointment",
     "🤒 I have fever and headache",
-    "📋 View all my appointments",
-    "✅ View completed appointments",
     "💊 Paracetamol side effects",
     "🩺 What is normal blood pressure",
   ];

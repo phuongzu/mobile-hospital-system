@@ -1661,7 +1661,6 @@ const MessageScreen = () => {
       // ✅ Update messages list if this is the active conversation
       if (active?._id === convId) {
         setMessages((prev) => {
-          // 1. Nếu có clientTempId → replace temp message
           if (msg.clientTempId) {
             const tempIndex = prev.findIndex(
               (m) => m.clientTempId === msg.clientTempId,
@@ -1676,16 +1675,12 @@ const MessageScreen = () => {
               return updated;
             }
           }
-
-          // 2. Tránh duplicate theo _id thật
           if (prev.some((m) => m._id === msg._id)) {
             return prev;
           }
 
           return [...prev, msg];
         });
-
-        // Mark as read if not from me
         if (socketRef.current?.connected && senderIdStr !== currentIdStr) {
           socketRef.current.emit("mark_as_read", { conversationId: convId });
         }
@@ -1696,19 +1691,15 @@ const MessageScreen = () => {
     [currentUserId, scrollToBottom],
   );
 
-  // ✅ FIX 2: Send message function with proper temp handling
   const sendTextMessage = async () => {
     if (!newMessage.trim() || !selectedConversation || sending) return;
 
     const text = newMessage.trim();
     const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-    // Clear input ngay lập tức
     setNewMessage("");
-    setSending(true); // Set loading state
+    setSending(true);
     emitTyping(false);
-
-    // Clear timeout cũ nếu có
     if (sendTimeoutRef.current) {
       clearTimeout(sendTimeoutRef.current);
       sendTimeoutRef.current = null;
@@ -1748,7 +1739,6 @@ const MessageScreen = () => {
     try {
       const token = await AsyncStorage.getItem("authToken");
       if (socketRef.current?.connected) {
-        // ✅ [MOBILE FIX] Use ACK callback for immediate button reset
         socketRef.current.emit(
           "send_message",
           {
@@ -1875,7 +1865,7 @@ const MessageScreen = () => {
               ? {
                 ...msg,
                 deleted: true,
-                deleted_for_me: true, // Current user sees it as deleted too
+                deleted_for_me: true,
                 message: "This message was deleted",
                 message_type: "text",
                 media_url: undefined,
@@ -1890,8 +1880,6 @@ const MessageScreen = () => {
               : msg,
           ),
         );
-
-        // ✅ Update last_message in conversation if applicable
         setConversations((prev) =>
           prev.map((conv) =>
             conv._id === conversationId && conv.last_message?._id === messageId
@@ -1911,7 +1899,6 @@ const MessageScreen = () => {
       }
       // ✅ CASE 2: Deleted for ME ONLY
       else if (type === "me") {
-        // Only update if it's for current user
         if (userId !== currentUserId) {
           console.log(
             `ℹ️ Delete is for another user (${userId}), skipping local update`,
@@ -2041,7 +2028,7 @@ const MessageScreen = () => {
     if (!token || socketRef.current?.connected) return;
 
     if (socketRef.current) {
-      socketRef.current.removeAllListeners(); // ✅ Clear all listeners trước khi reconnect
+      socketRef.current.removeAllListeners();
       socketRef.current.disconnect();
     }
 
@@ -2126,10 +2113,8 @@ const MessageScreen = () => {
       handleNewMessage(data);
     });
 
-    // ✅ Chỉ đăng ký 1 lần ở đây
     socketRef.current.on("message_sent_success", handleMessageSentSuccess);
     socketRef.current.on("message_error", handleMessageError);
-
     socketRef.current.on("message_edited", handleMessageEdited);
     socketRef.current.on("message_deleted", handleMessageDeleted);
     socketRef.current.on("reaction_added", handleReactionAdded);
@@ -2330,7 +2315,6 @@ const MessageScreen = () => {
 
             try {
               const token = await AsyncStorage.getItem("authToken");
-              // Go directly to REST — server will broadcast socket event to all participants
               await deleteViaRest(msg, type, token);
 
               Haptics.notificationAsync(
@@ -2407,16 +2391,12 @@ const MessageScreen = () => {
       throw err;
     }
   };
-  // Thêm interceptor cho axios
   useEffect(() => {
-    // Log tất cả requests
     const requestInterceptor = axios.interceptors.request.use(
       (config) => {
         console.log(`🌐 ${config.method?.toUpperCase()} ${config.url}`);
         console.log("📦 Body:", config.data);
         console.log("🔑 Headers:", config.headers);
-
-        // Đặc biệt log DELETE requests
         if (config.method === "delete") {
           console.log("🗑️ DELETE REQUEST DETAILS:", {
             url: config.url,
@@ -2702,7 +2682,6 @@ const MessageScreen = () => {
   });
 
   const renderContent = (item: Message) => {
-    // ✅ FIXED: Properly handle deleted messages with right text/icon
     if (item.deleted === true) {
       return (
         <View style={styles.deletedRow}>
